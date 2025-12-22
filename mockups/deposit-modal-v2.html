@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deposit Modal - Design Mockup v2</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #1a1a1a;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    /* Modal Container */
+    .modal {
+      width: 100%;
+      max-width: 360px;
+      background: #1e1e1e;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+      box-shadow: 
+        0 0 0 1px rgba(255, 255, 255, 0.05),
+        0 20px 50px -10px rgba(0, 0, 0, 0.6);
+    }
+
+    /* Header */
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .modal-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .close-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      border: none;
+      background: rgba(255, 255, 255, 0.08);
+      color: #888;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+    }
+
+    .close-btn:hover {
+      background: rgba(255, 255, 255, 0.12);
+      color: #aaa;
+    }
+
+    /* Chain Tabs */
+    .chain-tabs {
+      display: flex;
+      padding: 8px 12px;
+      gap: 4px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .chain-tabs::-webkit-scrollbar {
+      display: none;
+    }
+
+    .chain-tab {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: #888;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .chain-tab:hover {
+      background: rgba(255, 255, 255, 0.06);
+      color: #aaa;
+    }
+
+    .chain-tab.active {
+      background: rgba(167, 139, 250, 0.15);
+      border-color: rgba(167, 139, 250, 0.3);
+      color: #c4b5fd;
+    }
+
+    .chain-tab img {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+    }
+
+    /* Main Content */
+    .modal-content {
+      padding: 16px;
+    }
+
+    /* QR Section */
+    .qr-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .qr-wrapper {
+      position: relative;
+      padding: 8px;
+      background: #fff;
+      border-radius: 10px;
+      margin-bottom: 10px;
+    }
+
+    .qr-code {
+      width: 110px;
+      height: 110px;
+      display: block;
+    }
+
+    .qr-chain-badge {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 26px;
+      height: 26px;
+      background: #fff;
+      border-radius: 6px;
+      padding: 4px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .qr-chain-badge img {
+      width: 100%;
+      height: 100%;
+      border-radius: 3px;
+    }
+
+    /* Address Field */
+    .address-field {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 8px 12px;
+      background: rgba(0, 0, 0, 0.5);
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .address-text {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      font-weight: 500;
+      color: #aaa;
+      letter-spacing: 0.3px;
+    }
+
+    .copy-btn {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 10px;
+      background: rgba(167, 139, 250, 0.15);
+      border: 1px solid rgba(167, 139, 250, 0.3);
+      border-radius: 6px;
+      color: #c4b5fd;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      flex-shrink: 0;
+    }
+
+    .copy-btn:hover {
+      background: rgba(167, 139, 250, 0.25);
+      border-color: rgba(167, 139, 250, 0.4);
+    }
+
+    .copy-btn.copied {
+      background: rgba(34, 197, 94, 0.2);
+      border-color: rgba(34, 197, 94, 0.4);
+      color: #4ade80;
+    }
+
+    .copy-btn svg {
+      width: 12px;
+      height: 12px;
+    }
+
+    /* Supported Tokens */
+    .tokens-section {
+      margin-top: 12px;
+    }
+
+    .section-label {
+      font-size: 10px;
+      font-weight: 500;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .tokens-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-wrap: wrap;
+    }
+
+    .token-badge {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px 4px 5px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .token-badge img {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+    }
+
+    .token-badge span {
+      font-size: 11px;
+      font-weight: 500;
+      color: #aaa;
+    }
+
+    /* Activity Section */
+    .activity-section {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .activity-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .activity-status {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .status-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #a78bfa;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.4; }
+      50% { opacity: 1; }
+    }
+
+    .status-text {
+      font-size: 11px;
+      color: #888;
+    }
+
+    /* Activity Item */
+    .activity-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      margin-bottom: 6px;
+    }
+
+    .activity-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: rgba(34, 197, 94, 0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .activity-icon.processing {
+      background: rgba(167, 139, 250, 0.15);
+    }
+
+    .activity-icon img {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+    }
+
+    .activity-details {
+      flex: 1;
+    }
+
+    .activity-title {
+      font-size: 12px;
+      font-weight: 500;
+      color: #fff;
+      margin-bottom: 2px;
+    }
+
+    .activity-subtitle {
+      font-size: 10px;
+      color: #888;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .activity-subtitle img {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+    }
+
+    .activity-amount {
+      text-align: right;
+    }
+
+    .activity-value {
+      font-size: 12px;
+      font-weight: 600;
+      color: #4ade80;
+    }
+
+    .activity-usd {
+      font-size: 10px;
+      color: #888;
+    }
+
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 16px;
+      color: #666;
+      font-size: 12px;
+    }
+
+    /* Footer hint */
+    .modal-footer {
+      padding: 10px 16px;
+      background: rgba(0, 0, 0, 0.2);
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .footer-hint {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      font-size: 10px;
+      color: #666;
+      line-height: 1.5;
+      margin-bottom: 8px;
+    }
+
+    .footer-hint svg {
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    /* Powered by Particle */
+    .powered-by {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-size: 10px;
+      color: #555;
+      margin-top: 4px;
+    }
+
+    .powered-by svg {
+      opacity: 0.6;
+      height: 12px;
+      width: auto;
+    }
+
+    /* Variant Switcher (for demo) */
+    .variant-switcher {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      display: flex;
+      gap: 8px;
+    }
+
+    .variant-btn {
+      padding: 8px 16px;
+      background: #222;
+      border: 1px solid #333;
+      border-radius: 8px;
+      color: #888;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .variant-btn:hover {
+      background: #2a2a2a;
+      color: #aaa;
+    }
+
+    .variant-btn.active {
+      background: #333;
+      border-color: #444;
+      color: #fff;
+    }
+
+    /* Spinner */
+    .spinner {
+      width: 13px;
+      height: 13px;
+      border: 2px solid rgba(255, 255, 255, 0.1);
+      border-top-color: #a78bfa;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Variant Switcher for Demo -->
+  <div class="variant-switcher">
+    <button class="variant-btn active" onclick="showVariant('default')">Default</button>
+    <button class="variant-btn" onclick="showVariant('activity')">With Activity</button>
+    <button class="variant-btn" onclick="showVariant('processing')">Processing</button>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal">
+    <!-- Header -->
+    <div class="modal-header">
+      <span class="modal-title">Receive</span>
+      <button class="close-btn">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <path d="M1 1L13 13M1 13L13 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Chain Tabs -->
+    <div class="chain-tabs">
+      <button class="chain-tab active">
+        <img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png" alt="Arbitrum">
+        Arbitrum
+      </button>
+      <button class="chain-tab">
+        <img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/info/logo.png" alt="Base">
+        Base
+      </button>
+      <button class="chain-tab">
+        <img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png" alt="Ethereum">
+        Ethereum
+      </button>
+      <button class="chain-tab">
+        <img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png" alt="Polygon">
+        Polygon
+      </button>
+      <button class="chain-tab">
+        <img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png" alt="Solana">
+        Solana
+      </button>
+    </div>
+
+    <!-- Content -->
+    <div class="modal-content">
+      <!-- QR Code Section -->
+      <div class="qr-section">
+        <div class="qr-wrapper">
+          <!-- Placeholder QR - in real app use qrcode.js -->
+          <svg class="qr-code" viewBox="0 0 110 110">
+            <rect width="110" height="110" fill="#fff"/>
+            <g fill="#000">
+              <!-- Simplified QR pattern -->
+              <rect x="10" y="10" width="30" height="30"/>
+              <rect x="100" y="10" width="30" height="30"/>
+              <rect x="10" y="100" width="30" height="30"/>
+              <rect x="15" y="15" width="20" height="20" fill="#fff"/>
+              <rect x="105" y="15" width="20" height="20" fill="#fff"/>
+              <rect x="15" y="105" width="20" height="20" fill="#fff"/>
+              <rect x="20" y="20" width="10" height="10"/>
+              <rect x="110" y="20" width="10" height="10"/>
+              <rect x="20" y="110" width="10" height="10"/>
+              <!-- Random pattern -->
+              <rect x="50" y="10" width="5" height="5"/>
+              <rect x="60" y="10" width="5" height="5"/>
+              <rect x="70" y="15" width="5" height="5"/>
+              <rect x="80" y="10" width="5" height="5"/>
+              <rect x="50" y="20" width="5" height="5"/>
+              <rect x="65" y="25" width="5" height="5"/>
+              <rect x="75" y="20" width="5" height="5"/>
+              <rect x="85" y="25" width="5" height="5"/>
+              <rect x="10" y="50" width="5" height="5"/>
+              <rect x="20" y="55" width="5" height="5"/>
+              <rect x="25" y="65" width="5" height="5"/>
+              <rect x="15" y="75" width="5" height="5"/>
+              <rect x="30" y="80" width="5" height="5"/>
+              <rect x="50" y="50" width="40" height="40" rx="4"/>
+              <rect x="55" y="55" width="30" height="30" rx="2" fill="#fff"/>
+              <rect x="120" y="50" width="5" height="5"/>
+              <rect x="110" y="60" width="5" height="5"/>
+              <rect x="125" y="70" width="5" height="5"/>
+              <rect x="115" y="80" width="5" height="5"/>
+              <rect x="50" y="120" width="5" height="5"/>
+              <rect x="65" y="115" width="5" height="5"/>
+              <rect x="75" y="125" width="5" height="5"/>
+              <rect x="85" y="110" width="5" height="5"/>
+              <rect x="95" y="120" width="5" height="5"/>
+            </g>
+          </svg>
+          <div class="qr-chain-badge">
+            <img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png" alt="Arbitrum">
+          </div>
+        </div>
+
+        <!-- Address -->
+        <div class="address-field">
+          <span class="address-text">0xd6F1...332a</span>
+          <button class="copy-btn" onclick="copyAddress(this)">
+            <svg viewBox="0 0 16 16" fill="none">
+              <rect x="5" y="5" width="9" height="9" rx="2" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M11 5V3.5C11 2.67 10.33 2 9.5 2H3.5C2.67 2 2 2.67 2 3.5V9.5C2 10.33 2.67 11 3.5 11H5" stroke="currentColor" stroke-width="1.5"/>
+            </svg>
+            Copy
+          </button>
+        </div>
+      </div>
+
+      <!-- Supported Tokens -->
+      <div class="tokens-section">
+        <div class="section-label">Supported tokens</div>
+        <div class="tokens-row">
+          <div class="token-badge">
+            <img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png" alt="USDC">
+            <span>USDC</span>
+          </div>
+          <div class="token-badge">
+            <img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xdAC17F958D2ee523a2206206994597C13D831ec7/logo.png" alt="USDT">
+            <span>USDT</span>
+          </div>
+          <div class="token-badge">
+            <img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png" alt="ETH">
+            <span>ETH</span>
+          </div>
+          <div class="token-badge">
+            <img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/bitcoin/info/logo.png" alt="BTC">
+            <span>BTC</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Activity Section -->
+      <div class="activity-section">
+        <div class="activity-header">
+          <span class="section-label">Activity</span>
+          <div class="activity-status" id="listening-status">
+            <div class="status-dot"></div>
+            <span class="status-text">Listening</span>
+          </div>
+        </div>
+
+        <div id="activity-list">
+          <!-- Empty state (default) -->
+          <div class="empty-state" id="empty-state">
+            Deposits will appear here
+          </div>
+
+          <!-- Activity items (hidden by default) -->
+          <div class="activity-item" id="activity-item-1" style="display: none;">
+            <div class="activity-icon">
+              <img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png" alt="USDC">
+            </div>
+            <div class="activity-details">
+              <div class="activity-title">USDC received</div>
+              <div class="activity-subtitle">
+                <img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png" alt="Polygon">
+                Polygon → Arbitrum
+              </div>
+            </div>
+            <div class="activity-amount">
+              <div class="activity-value">+50.00</div>
+              <div class="activity-usd">$50.00</div>
+            </div>
+          </div>
+
+          <!-- Processing item -->
+          <div class="activity-item" id="activity-item-processing" style="display: none;">
+            <div class="activity-icon processing">
+              <div class="spinner"></div>
+            </div>
+            <div class="activity-details">
+              <div class="activity-title">Processing deposit...</div>
+              <div class="activity-subtitle">
+                <img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png" alt="ETH">
+                Ethereum → Arbitrum
+              </div>
+            </div>
+            <div class="activity-amount">
+              <div class="activity-value" style="color: #3b82f6;">0.05 ETH</div>
+              <div class="activity-usd">~$150</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="modal-footer">
+      <div class="footer-hint">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.2"/>
+          <path d="M7 6V10M7 4.5V4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+        <span>Deposits are automatically consolidated to Arbitrum. Only send supported tokens to this address.</span>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    function copyAddress(btn) {
+      navigator.clipboard.writeText('0xd6F17524421aD97e5933F5192942c3A8D332a1234');
+      btn.classList.add('copied');
+      btn.innerHTML = `
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <path d="M2 6L5 9L10 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Copied
+      `;
+      setTimeout(() => {
+        btn.classList.remove('copied');
+        btn.innerHTML = `
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.2"/>
+            <path d="M8.5 3.5V2.5C8.5 1.67 7.83 1 7 1H2.5C1.67 1 1 1.67 1 2.5V7C1 7.83 1.67 8.5 2.5 8.5H3.5" stroke="currentColor" stroke-width="1.2"/>
+          </svg>
+          Copy
+        `;
+      }, 2000);
+    }
+
+    function showVariant(variant) {
+      // Update buttons
+      document.querySelectorAll('.variant-btn').forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+
+      // Reset
+      document.getElementById('empty-state').style.display = 'block';
+      document.getElementById('activity-item-1').style.display = 'none';
+      document.getElementById('activity-item-processing').style.display = 'none';
+      document.getElementById('listening-status').style.display = 'flex';
+
+      if (variant === 'activity') {
+        document.getElementById('empty-state').style.display = 'none';
+        document.getElementById('activity-item-1').style.display = 'flex';
+      } else if (variant === 'processing') {
+        document.getElementById('empty-state').style.display = 'none';
+        document.getElementById('activity-item-processing').style.display = 'flex';
+      }
+    }
+
+    // Tab switching
+    document.querySelectorAll('.chain-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.chain-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+      });
+    });
+  </script>
+</body>
+</html>

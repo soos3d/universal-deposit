@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deposit Widget - Inline Compact</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #1a1a1a;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      flex-direction: column;
+      gap: 30px;
+    }
+
+    /* Inline Compact Widget */
+    .widget-inline {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      background: rgba(30, 30, 30, 0.95);
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      max-width: 320px;
+      width: 100%;
+    }
+
+    .chain-selector {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      border: 1px solid transparent;
+    }
+
+    .chain-selector:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(167, 139, 250, 0.3);
+    }
+
+    .chain-icon {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+    }
+
+    .chain-name {
+      font-size: 12px;
+      font-weight: 500;
+      color: #aaa;
+    }
+
+    .chevron {
+      width: 12px;
+      height: 12px;
+      color: #666;
+      transition: transform 0.2s ease;
+    }
+
+    .chain-selector.open .chevron {
+      transform: rotate(180deg);
+    }
+
+    /* Chain Dropdown */
+    .chain-dropdown {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      background: #1e1e1e;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      padding: 6px;
+      min-width: 140px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      display: none;
+      z-index: 100;
+    }
+
+    .chain-dropdown.active {
+      display: block;
+    }
+
+    .chain-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .chain-option:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .chain-option.selected {
+      background: rgba(167, 139, 250, 0.15);
+    }
+
+    .chain-option img {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+    }
+
+    .chain-option span {
+      font-size: 12px;
+      font-weight: 500;
+      color: #aaa;
+    }
+
+    .chain-option.selected span {
+      color: #c4b5fd;
+    }
+
+    .address-inline {
+      flex: 1;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: #888;
+      letter-spacing: 0.3px;
+      cursor: pointer;
+      padding: 6px 8px;
+      border-radius: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .address-inline:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: #aaa;
+    }
+
+    .copy-icon-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      background: rgba(167, 139, 250, 0.15);
+      border: 1px solid rgba(167, 139, 250, 0.3);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .copy-icon-btn:hover {
+      background: rgba(167, 139, 250, 0.25);
+      border-color: rgba(167, 139, 250, 0.4);
+    }
+
+    .copy-icon-btn svg {
+      width: 14px;
+      height: 14px;
+      color: #c4b5fd;
+    }
+
+    .copy-icon-btn.copied {
+      background: rgba(34, 197, 94, 0.2);
+      border-color: rgba(34, 197, 94, 0.4);
+    }
+
+    .copy-icon-btn.copied svg {
+      color: #4ade80;
+    }
+
+    .qr-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .qr-toggle:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    .qr-toggle svg {
+      width: 14px;
+      height: 14px;
+      color: #888;
+    }
+
+    /* QR Popup */
+    .qr-popup {
+      position: absolute;
+      top: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 16px;
+      background: #1e1e1e;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+      display: none;
+      z-index: 100;
+    }
+
+    .qr-popup.active {
+      display: block;
+    }
+
+    .qr-popup-inner {
+      position: relative;
+      padding: 10px;
+      background: #fff;
+      border-radius: 10px;
+    }
+
+    .qr-popup-code {
+      width: 120px;
+      height: 120px;
+      display: block;
+    }
+
+    .qr-popup-badge {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 28px;
+      height: 28px;
+      background: #fff;
+      border-radius: 6px;
+      padding: 4px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .qr-popup-badge img {
+      width: 100%;
+      height: 100%;
+      border-radius: 3px;
+    }
+
+    /* Container for positioning */
+    .widget-container {
+      position: relative;
+    }
+
+    /* Demo label */
+    .demo-label {
+      font-size: 11px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 12px;
+      text-align: center;
+    }
+
+    .demo-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+  </style>
+</head>
+<body>
+  <!-- Option 1: Inline Compact Widget -->
+  <div class="demo-section">
+    <div class="demo-label">Option 1: Inline Compact</div>
+    <div class="widget-container">
+      <div class="widget-inline">
+        <!-- Chain Selector -->
+        <div class="chain-selector" onclick="toggleChainDropdown(event)">
+          <img class="chain-icon" id="selectedChainIcon" src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png" alt="Arbitrum">
+          <span class="chain-name" id="selectedChainName">Arbitrum</span>
+          <svg class="chevron" viewBox="0 0 12 12" fill="none">
+            <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          
+          <!-- Dropdown -->
+          <div class="chain-dropdown" id="chainDropdown">
+            <div class="chain-option selected" data-chain="arbitrum" onclick="selectChain(event, 'arbitrum', 'Arbitrum', 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png')">
+              <img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png" alt="Arbitrum">
+              <span>Arbitrum</span>
+            </div>
+            <div class="chain-option" data-chain="base" onclick="selectChain(event, 'base', 'Base', 'https://github.com/base-org/brand-kit/raw/main/logo/in-product/Base_Network_Logo.png')">
+              <img src="https://github.com/base-org/brand-kit/raw/main/logo/in-product/Base_Network_Logo.png" alt="Base">
+              <span>Base</span>
+            </div>
+            <div class="chain-option" data-chain="ethereum" onclick="selectChain(event, 'ethereum', 'Ethereum', 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png')">
+              <img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png" alt="Ethereum">
+              <span>Ethereum</span>
+            </div>
+            <div class="chain-option" data-chain="polygon" onclick="selectChain(event, 'polygon', 'Polygon', 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png')">
+              <img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png" alt="Polygon">
+              <span>Polygon</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Address -->
+        <div class="address-inline" onclick="copyAddressInline(this)">0xd6F1...332a</div>
+
+        <!-- Copy Button -->
+        <button class="copy-icon-btn" onclick="copyAddressBtn(this)">
+          <svg viewBox="0 0 16 16" fill="none">
+            <rect x="5" y="5" width="9" height="9" rx="2" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M11 5V3.5C11 2.67 10.33 2 9.5 2H3.5C2.67 2 2 2.67 2 3.5V9.5C2 10.33 2.67 11 3.5 11H5" stroke="currentColor" stroke-width="1.5"/>
+          </svg>
+        </button>
+
+        <!-- QR Toggle -->
+        <button class="qr-toggle" onclick="toggleQR(this)">
+          <svg viewBox="0 0 16 16" fill="none">
+            <rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+            <rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+            <rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+            <rect x="10" y="10" width="3" height="3" fill="currentColor"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- QR Popup -->
+      <div class="qr-popup" id="qrPopup">
+        <div class="qr-popup-inner">
+          <svg class="qr-popup-code" viewBox="0 0 110 110">
+            <rect width="110" height="110" fill="#fff"/>
+            <g fill="#000">
+              <rect x="10" y="10" width="30" height="30"/>
+              <rect x="80" y="10" width="30" height="30"/>
+              <rect x="10" y="80" width="30" height="30"/>
+              <rect x="15" y="15" width="20" height="20" fill="#fff"/>
+              <rect x="85" y="15" width="20" height="20" fill="#fff"/>
+              <rect x="15" y="85" width="20" height="20" fill="#fff"/>
+              <rect x="20" y="20" width="10" height="10"/>
+              <rect x="90" y="20" width="10" height="10"/>
+              <rect x="20" y="90" width="10" height="10"/>
+              <rect x="50" y="10" width="5" height="5"/>
+              <rect x="60" y="15" width="5" height="5"/>
+              <rect x="70" y="10" width="5" height="5"/>
+              <rect x="10" y="50" width="5" height="5"/>
+              <rect x="15" y="60" width="5" height="5"/>
+              <rect x="25" y="55" width="5" height="5"/>
+              <rect x="50" y="50" width="30" height="30" rx="4"/>
+              <rect x="55" y="55" width="20" height="20" rx="2" fill="#fff"/>
+            </g>
+          </svg>
+          <div class="qr-popup-badge">
+            <img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png" alt="Arbitrum">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function copyAddressInline(el) {
+      navigator.clipboard.writeText('0xd6F17524421aD97e5933F5192942c3A8D332a1234');
+      const original = el.textContent;
+      el.textContent = 'Copied!';
+      el.style.color = '#4ade80';
+      setTimeout(() => {
+        el.textContent = original;
+        el.style.color = '#888';
+      }, 2000);
+    }
+
+    function copyAddressBtn(btn) {
+      navigator.clipboard.writeText('0xd6F17524421aD97e5933F5192942c3A8D332a1234');
+      btn.classList.add('copied');
+      btn.innerHTML = `
+        <svg viewBox="0 0 16 16" fill="none">
+          <path d="M3 8L6 11L13 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      `;
+      setTimeout(() => {
+        btn.classList.remove('copied');
+        btn.innerHTML = `
+          <svg viewBox="0 0 16 16" fill="none">
+            <rect x="5" y="5" width="9" height="9" rx="2" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M11 5V3.5C11 2.67 10.33 2 9.5 2H3.5C2.67 2 2 2.67 2 3.5V9.5C2 10.33 2.67 11 3.5 11H5" stroke="currentColor" stroke-width="1.5"/>
+          </svg>
+        `;
+      }, 2000);
+    }
+
+    function toggleQR(btn) {
+      const popup = document.getElementById('qrPopup');
+      popup.classList.toggle('active');
+    }
+
+    function toggleChainDropdown(e) {
+      e.stopPropagation();
+      const dropdown = document.getElementById('chainDropdown');
+      const selector = document.querySelector('.chain-selector');
+      dropdown.classList.toggle('active');
+      selector.classList.toggle('open');
+    }
+
+    function selectChain(e, chainId, chainName, iconUrl) {
+      e.stopPropagation();
+      
+      document.getElementById('selectedChainIcon').src = iconUrl;
+      document.getElementById('selectedChainIcon').alt = chainName;
+      document.getElementById('selectedChainName').textContent = chainName;
+      
+      document.querySelectorAll('.chain-option').forEach(opt => opt.classList.remove('selected'));
+      e.currentTarget.classList.add('selected');
+      
+      document.getElementById('chainDropdown').classList.remove('active');
+      document.querySelector('.chain-selector').classList.remove('open');
+      
+      const qrBadge = document.querySelector('.qr-popup-badge img');
+      if (qrBadge) {
+        qrBadge.src = iconUrl;
+        qrBadge.alt = chainName;
+      }
+    }
+
+    document.addEventListener('click', (e) => {
+      const popup = document.getElementById('qrPopup');
+      const toggle = document.querySelector('.qr-toggle');
+      const dropdown = document.getElementById('chainDropdown');
+      const selector = document.querySelector('.chain-selector');
+      
+      if (!popup.contains(e.target) && !toggle.contains(e.target)) {
+        popup.classList.remove('active');
+      }
+      
+      if (!selector.contains(e.target)) {
+        dropdown.classList.remove('active');
+        selector.classList.remove('open');
+      }
+    });
+  </script>
+</body>
+</html>
