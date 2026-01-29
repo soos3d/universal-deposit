@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { usePrivy, useWallets } from "@privy-io/react-auth";
+import { usePrivy, useWallets, getEmbeddedConnectedWallet } from "@privy-io/react-auth";
 import { useDeposit, DepositModal } from "@particle-network/deposit-sdk/react";
 
 /**
@@ -20,8 +20,9 @@ export function DepositDemo() {
   const { wallets } = useWallets();
   const [showModal, setShowModal] = useState(false);
 
-  const primaryWallet = wallets[0];
-  const ownerAddress = primaryWallet?.address;
+  // Use Privy's embedded wallet, not external wallets like MetaMask
+  const embeddedWallet = getEmbeddedConnectedWallet(wallets);
+  const ownerAddress = embeddedWallet?.address;
 
   // This is all you need! The SDK handles JWT + Auth Core internally
   const { isConnecting, isReady, error, disconnect } = useDeposit({

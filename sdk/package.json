@@ -48,7 +48,6 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/react": "^19.2.7",
-    "@types/react-dom": "^19.2.3",
     "tsup": "^8.0.0",
     "typescript": "^5.3.0",
     "vitest": "^1.0.0"
@@ -68,9 +67,7 @@
   "dependencies": {
     "@particle-network/auth-core": "^2.1.1",
     "@particle-network/auth-core-modal": "^1.5.2",
-    "@particle-network/chains": "^1.8.3",
-    "@particle-network/universal-account-sdk": "^1.0.12",
-    "class-variance-authority": "^0.7.1",
+    "@particle-network/universal-account-sdk": "^1.0.24",
     "clsx": "^2.1.1",
     "lucide-react": "^0.562.0",
     "qrcode.react": "^4.2.0",

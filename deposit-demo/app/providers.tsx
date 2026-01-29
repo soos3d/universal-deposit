@@ -3,7 +3,7 @@
 import { PrivyProvider } from "@privy-io/react-auth";
 import { DepositProvider } from "@particle-network/deposit-sdk/react";
 
-const PRIVY_APP_ID = "cmj91pslf03c3l50ckh4d8ff9";
+const PRIVY_APP_ID = "cmk42oyun0316ky0cwqf3abt7";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
