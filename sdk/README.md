@@ -39,6 +39,8 @@ The Deposit SDK uses Universal Accounts to enable seamless cross-chain deposits.
 
 4. **Auto-sweep**: Deposits are detected via balance polling, then automatically swept to the user's connected wallet on their preferred chain (default: Arbitrum).
 
+5. **Session Isolation**: Each user's session is cached independently, preventing wallet identity mixing when users connect and disconnect.
+
 ## Installation
 
 ```bash
@@ -376,6 +378,19 @@ sdk/
 
 ## Development
 
+See [docs/CONTRIB.md](docs/CONTRIB.md) for the full contributing guide.
+
+### Scripts
+
+| Script | Command | Description |
+|--------|---------|-------------|
+| `build` | `npm run build` | Build ESM + CJS + types to `dist/` |
+| `dev` | `npm run dev` | Development mode with watch |
+| `typecheck` | `npm run typecheck` | TypeScript type checking |
+| `test` | `npm run test` | Run unit tests |
+| `test:watch` | `npm run test:watch` | Run tests in watch mode |
+| `test:integration` | `npm run test:integration` | Run integration tests (real API) |
+
 ### Build
 
 ```bash
@@ -406,6 +421,10 @@ npm run test:watch
 npm run typecheck
 ```
 
+### Operations
+
+See [docs/RUNBOOK.md](docs/RUNBOOK.md) for deployment, monitoring, and troubleshooting.
+
 ## Core Components
 
 ### DepositClient
@@ -432,9 +451,10 @@ Manages JWT authentication with the hosted JWT service. Handles session caching,
 
 **Features:**
 - Automatic JWT fetching from Cloudflare Worker
-- Session caching (avoids redundant requests)
-- 60-second expiry buffer
-- Concurrent request deduplication
+- **Per-user session isolation** - Each user gets their own cached session (prevents wallet mixing)
+- Session caching with 60-second expiry buffer
+- Concurrent request deduplication (per-user)
+- Address normalization (case-insensitive)
 - Proper error handling (JwtError, AuthenticationError)
 
 **Internal Use Only** - Not exposed in public API.
@@ -559,12 +579,12 @@ client.removeAllListeners();
 - [x] **Phase 4**: Balance watching & auto-sweep
 - [ ] **Phase 5**: EOA detection & deposit
 - [x] **Phase 6**: UI components (React)
-- [ ] **Phase 7**: Testing & documentation
+- [x] **Phase 7**: Testing & documentation
 - [ ] **Phase 8**: npm publishing
 
 ## Contributing
 
-This SDK is under active development. Current focus is on Phase 7 (Testing & documentation).
+See [docs/CONTRIB.md](docs/CONTRIB.md) for the development workflow, available scripts, and contribution guidelines.
 
 ## License
 

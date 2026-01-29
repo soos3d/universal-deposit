@@ -29,12 +29,18 @@ export type BalanceWatcherEvents = {
   [key: string]: (...args: any[]) => void;
 };
 
+// Time after which a processing key is considered stale (5 minutes)
+const PROCESSING_KEY_EXPIRY_MS = 5 * 60 * 1000;
+// Maximum number of processing keys to prevent unbounded memory growth
+const MAX_PROCESSING_KEYS = 100;
+
 export class BalanceWatcher extends TypedEventEmitter<BalanceWatcherEvents> {
   private config: BalanceWatcherConfig;
   private lastSnapshot: BalanceSnapshot | null = null;
   private pollingInterval: ReturnType<typeof setInterval> | null = null;
   private isWatching = false;
-  private processingKeys: Set<string> = new Set();
+  // Store processing keys with timestamps for auto-expiration
+  private processingKeys: Map<string, number> = new Map();
   private initialCheckDone = false;
 
   constructor(config: BalanceWatcherConfig) {
@@ -87,7 +93,8 @@ export class BalanceWatcher extends TypedEventEmitter<BalanceWatcherEvents> {
    * Mark a deposit as being processed (to avoid duplicate detection)
    */
   markAsProcessing(key: string): void {
-    this.processingKeys.add(key);
+    this.cleanupStaleProcessingKeys();
+    this.processingKeys.set(key, Date.now());
   }
 
   /**
@@ -95,6 +102,38 @@ export class BalanceWatcher extends TypedEventEmitter<BalanceWatcherEvents> {
    */
   clearProcessingKey(key: string): void {
     this.processingKeys.delete(key);
+  }
+
+  /**
+   * Remove processing keys that are older than the expiry threshold
+   * or if we've exceeded the maximum number of keys
+   */
+  private cleanupStaleProcessingKeys(): void {
+    const now = Date.now();
+    const keysToDelete: string[] = [];
+
+    for (const [key, timestamp] of this.processingKeys.entries()) {
+      if (now - timestamp > PROCESSING_KEY_EXPIRY_MS) {
+        keysToDelete.push(key);
+      }
+    }
+
+    for (const key of keysToDelete) {
+      this.processingKeys.delete(key);
+    }
+
+    // If still over limit, remove oldest entries
+    if (this.processingKeys.size > MAX_PROCESSING_KEYS) {
+      const entries = Array.from(this.processingKeys.entries())
+        .sort((a, b) => a[1] - b[1]); // Sort by timestamp ascending
+
+      const toRemove = entries.slice(0, entries.length - MAX_PROCESSING_KEYS);
+      for (const [key] of toRemove) {
+        this.processingKeys.delete(key);
+      }
+
+      console.warn(`[BalanceWatcher] Cleaned up ${toRemove.length} stale processing keys`);
+    }
   }
 
   /**
@@ -167,11 +206,12 @@ export class BalanceWatcher extends TypedEventEmitter<BalanceWatcherEvents> {
 
       // Subsequent polls - detect changes
       if (this.lastSnapshot) {
+        this.cleanupStaleProcessingKeys();
         const deposits = this.detectChanges(this.lastSnapshot, currentSnapshot);
         for (const deposit of deposits) {
           const key = `${deposit.token}:${deposit.chainId}`;
           if (!this.processingKeys.has(key)) {
-            this.processingKeys.add(key);
+            this.processingKeys.set(key, Date.now());
             this.emit('deposit:detected', deposit);
           }
         }
@@ -220,7 +260,7 @@ export class BalanceWatcher extends TypedEventEmitter<BalanceWatcherEvents> {
 
         console.log(`[BalanceWatcher] Found existing ${tokenType} on chain ${chainId} ($${valueUSD.toFixed(2)})`);
 
-        this.processingKeys.add(key);
+        this.processingKeys.set(key, Date.now());
         this.emit('deposit:detected', {
           id: `${key}:${Date.now()}`,
           token: tokenType.toUpperCase() as TokenType,

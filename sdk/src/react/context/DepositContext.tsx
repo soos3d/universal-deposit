@@ -98,6 +98,8 @@ function DepositProviderInner({ config, children }: DepositProviderInnerProps) {
   const clientRef = useRef<DepositClient | null>(null);
   const ownerAddressRef = useRef<string | null>(null);
   const connectingRef = useRef(false);
+  const disconnectingRef = useRef(false);
+  const connectionLockRef = useRef<Promise<void> | null>(null);
   const intermediaryServiceRef = useRef<IntermediaryService>(
     new IntermediaryService({
       projectId: DEFAULT_PROJECT_ID,
@@ -256,19 +258,28 @@ function DepositProviderInner({ config, children }: DepositProviderInnerProps) {
   // Initialize client after Auth Core connection
   useEffect(() => {
     const initClient = async () => {
+      const currentOwner = ownerAddressRef.current;
+
       console.log("[DepositSDK] 🔄 initClient check:", {
         authCoreConnected,
         authCoreAddress,
         hasProvider: !!authCoreProvider,
-        ownerAddress: ownerAddressRef.current,
+        ownerAddress: currentOwner,
         hasClient: !!clientRef.current,
+        isDisconnecting: disconnectingRef.current,
       });
+
+      // Skip if disconnecting
+      if (disconnectingRef.current) {
+        console.log("[DepositSDK] ⏭️ initClient skipped - disconnecting");
+        return;
+      }
 
       if (
         !authCoreConnected ||
         !authCoreAddress ||
         !authCoreProvider ||
-        !ownerAddressRef.current
+        !currentOwner
       ) {
         console.log(
           "[DepositSDK] ⏭️ initClient skipped - missing requirements"
@@ -276,18 +287,25 @@ function DepositProviderInner({ config, children }: DepositProviderInnerProps) {
         return;
       }
 
-      // Already have a client
+      // Already have a client - verify it's for the same owner
       if (clientRef.current) {
-        console.log(
-          "[DepositSDK] ⏭️ initClient skipped - client already exists"
-        );
-        return;
+        const existingConfig = clientRef.current.getConfig();
+        if (existingConfig.ownerAddress.toLowerCase() === currentOwner.toLowerCase()) {
+          console.log(
+            "[DepositSDK] ⏭️ initClient skipped - client already exists for this owner"
+          );
+          return;
+        }
+        // Different owner - destroy old client first
+        console.log("[DepositSDK] 🔄 Owner changed, destroying old client");
+        clientRef.current.destroy();
+        clientRef.current = null;
       }
 
       try {
         console.log("[DepositSDK] 🏗️ Step 4: Creating DepositClient...");
         console.log("[DepositSDK] Config:", {
-          ownerAddress: ownerAddressRef.current,
+          ownerAddress: currentOwner,
           intermediaryAddress: authCoreAddress,
           destinationChainId:
             config.destination?.chainId ?? DEFAULT_DESTINATION_CHAIN_ID,
@@ -295,7 +313,7 @@ function DepositProviderInner({ config, children }: DepositProviderInnerProps) {
         });
 
         const client = new DepositClient({
-          ownerAddress: ownerAddressRef.current,
+          ownerAddress: currentOwner,
           intermediaryAddress: authCoreAddress,
           authCoreProvider: {
             signMessage: (message: string) =>
@@ -318,6 +336,13 @@ function DepositProviderInner({ config, children }: DepositProviderInnerProps) {
           "[DepositSDK] 🔄 Step 5: Initializing client (UA setup)..."
         );
         await client.initialize();
+
+        // Verify owner hasn't changed during async initialization
+        if (ownerAddressRef.current?.toLowerCase() !== currentOwner.toLowerCase()) {
+          console.warn("[DepositSDK] ⚠️ Owner changed during initialization, destroying client");
+          client.destroy();
+          return;
+        }
 
         console.log("[DepositSDK] 📍 Step 6: Getting deposit addresses...");
         const addresses = await client.getDepositAddresses();
@@ -355,23 +380,48 @@ function DepositProviderInner({ config, children }: DepositProviderInnerProps) {
       console.log("[DepositSDK] 🔌 connect() called with:", ownerAddress);
       console.log("[DepositSDK] Current state:", {
         connectingRef: connectingRef.current,
+        disconnectingRef: disconnectingRef.current,
         isConnecting,
         isConnected,
         authCoreConnected,
         authCoreAddress,
         hasProvider: !!authCoreProvider,
+        currentOwner: ownerAddressRef.current,
       });
 
+      // Wait for any pending connection/disconnection to complete
+      if (connectionLockRef.current) {
+        console.log("[DepositSDK] ⏳ Waiting for pending operation to complete...");
+        await connectionLockRef.current;
+      }
+
       // Use ref to prevent multiple simultaneous calls
-      if (connectingRef.current || isConnecting || isConnected) {
+      if (connectingRef.current || isConnecting) {
         console.log(
-          "[DepositSDK] ⏭️ Connect skipped - already connecting or connected"
+          "[DepositSDK] ⏭️ Connect skipped - already connecting"
         );
         return;
       }
 
-      // If already connected to Auth Core, just set the owner address
-      if (authCoreConnected && authCoreAddress && authCoreProvider) {
+      // If already connected with same address, skip
+      if (isConnected && ownerAddressRef.current?.toLowerCase() === ownerAddress.toLowerCase()) {
+        console.log(
+          "[DepositSDK] ⏭️ Connect skipped - already connected with same address"
+        );
+        return;
+      }
+
+      // If connected with different address, disconnect first
+      if (isConnected && ownerAddressRef.current && ownerAddressRef.current.toLowerCase() !== ownerAddress.toLowerCase()) {
+        console.log(
+          "[DepositSDK] 🔄 Different address detected, disconnecting first..."
+        );
+        // Recursive call will happen after disconnect completes via useDeposit hook
+        return;
+      }
+
+      // If already connected to Auth Core with matching intermediary, just set the owner address
+      if (authCoreConnected && authCoreAddress && authCoreProvider && !ownerAddressRef.current) {
         console.log(
           "[DepositSDK] ✅ Auth Core already connected, reusing connection"
         );
@@ -385,14 +435,26 @@ function DepositProviderInner({ config, children }: DepositProviderInnerProps) {
       setError(null);
       ownerAddressRef.current = ownerAddress;
 
+      // Create connection lock promise
+      let resolveLock: () => void;
+      connectionLockRef.current = new Promise((resolve) => {
+        resolveLock = resolve;
+      });
+
       try {
         console.log("[DepositSDK] 📡 Step 1: Fetching JWT from worker...");
         console.log("[DepositSDK] JWT URL:", DEFAULT_JWT_SERVICE_URL);
 
-        // Fetch JWT from worker
+        // Fetch JWT from worker (per-user cached)
         const session = await intermediaryServiceRef.current.getSession(
           ownerAddress
         );
+
+        // Verify we're still connecting the same address (no race condition)
+        if (ownerAddressRef.current?.toLowerCase() !== ownerAddress.toLowerCase()) {
+          console.warn("[DepositSDK] ⚠️ Address changed during connection, aborting");
+          return;
+        }
 
         console.log("[DepositSDK] ✅ Step 1 Complete: JWT received");
         console.log(
@@ -431,9 +493,15 @@ function DepositProviderInner({ config, children }: DepositProviderInnerProps) {
         // Don't set isConnected here - let the useEffect handle it when authCoreConnected changes
       } catch (err) {
         console.error("[DepositSDK] ❌ Connection failed:", err);
+        // Clear session for this user on error to allow retry
+        intermediaryServiceRef.current.clearSessionForUser(ownerAddress);
         setError(err instanceof Error ? err : new Error(String(err)));
         setIsConnecting(false);
         connectingRef.current = false;
+        ownerAddressRef.current = null;
+      } finally {
+        resolveLock!();
+        connectionLockRef.current = null;
       }
     },
     [
@@ -447,27 +515,61 @@ function DepositProviderInner({ config, children }: DepositProviderInnerProps) {
   );
 
   const disconnect = useCallback(async () => {
-    if (clientRef.current) {
-      clientRef.current.destroy();
-      clientRef.current = null;
+    // Prevent concurrent disconnect calls
+    if (disconnectingRef.current) {
+      console.log("[DepositSDK] ⏭️ Disconnect skipped - already disconnecting");
+      return;
     }
 
-    // Disconnect from Auth Core
-    if (authCoreConnected) {
-      await authCoreDisconnect();
+    // Wait for any pending connection to complete first
+    if (connectionLockRef.current) {
+      console.log("[DepositSDK] ⏳ Waiting for pending connection to complete before disconnect...");
+      await connectionLockRef.current;
     }
 
-    // Clear session
-    intermediaryServiceRef.current.clearSession();
+    disconnectingRef.current = true;
 
-    ownerAddressRef.current = null;
-    setIsConnected(false);
-    setIsReady(false);
-    setDepositAddresses(null);
-    setPendingDeposits([]);
-    setRecentActivity([]);
-    setStatus("idle");
-    setError(null);
+    // Create disconnect lock promise
+    let resolveLock: () => void;
+    connectionLockRef.current = new Promise((resolve) => {
+      resolveLock = resolve;
+    });
+
+    try {
+      const previousOwner = ownerAddressRef.current;
+      console.log("[DepositSDK] 🔌 Disconnecting user:", previousOwner);
+
+      if (clientRef.current) {
+        clientRef.current.destroy();
+        clientRef.current = null;
+      }
+
+      // Disconnect from Auth Core
+      if (authCoreConnected) {
+        await authCoreDisconnect();
+      }
+
+      // Clear session for the specific user (not all users)
+      if (previousOwner) {
+        intermediaryServiceRef.current.clearSessionForUser(previousOwner);
+      }
+
+      ownerAddressRef.current = null;
+      setIsConnected(false);
+      setIsReady(false);
+      setDepositAddresses(null);
+      setPendingDeposits([]);
+      setRecentActivity([]);
+      setStatus("idle");
+      setError(null);
+      connectingRef.current = false;
+
+      console.log("[DepositSDK] ✅ Disconnect complete");
+    } finally {
+      disconnectingRef.current = false;
+      resolveLock!();
+      connectionLockRef.current = null;
+    }
   }, [authCoreConnected, authCoreDisconnect]);
 
   const startWatching = useCallback(() => {
