@@ -1,6 +1,6 @@
 // Context & Provider
-export { 
-  DepositProvider, 
+export {
+  DepositProvider,
   useDepositContext,
   type DepositProviderProps,
   type DepositConfig,
@@ -16,6 +16,10 @@ export { RecoveryModal, type RecoveryModalProps } from './components/RecoveryMod
 // Hooks
 export { useDeposit, type UseDepositOptions, type UseDepositReturn } from './hooks/useDeposit';
 export { useDepositClient, type UseDepositClientOptions, type UseDepositClientReturn } from './hooks/useDepositClient';
+
+// Re-export commonly used types and constants for convenience
+export type { DestinationConfig } from '../core/types';
+export { CHAIN, getChainName } from '../constants/chains';
 
 // Utils
 export { cn } from './utils/cn';

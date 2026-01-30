@@ -17,6 +17,9 @@ export function DepositModal({
   className,
   overlayClassName,
   theme = "dark",
+  destination,
+  onDestinationChange,
+  showDestination,
 }: DepositModalProps) {
   // client is optional - DepositWidget will use context if not provided
   // Handle escape key
@@ -70,7 +73,14 @@ export function DepositModal({
           className
         )}
       >
-        <DepositWidget client={client} onClose={onClose} theme={theme} />
+        <DepositWidget
+          client={client}
+          onClose={onClose}
+          theme={theme}
+          destination={destination}
+          onDestinationChange={onDestinationChange}
+          showDestination={showDestination}
+        />
       </div>
     </div>
   );

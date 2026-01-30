@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { X, Copy, QrCode, Check, Clock, AlertCircle } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { cn } from "../utils/cn";
 import type { DepositClient } from "../../core/DepositClient";
-import type { DetectedDeposit, SweepResult, TokenType } from "../../core/types";
-import { CHAIN, CHAIN_META } from "../../constants/chains";
+import type { DetectedDeposit, SweepResult, TokenType, DestinationConfig } from "../../core/types";
+import { CHAIN, CHAIN_META, getChainName } from "../../constants/chains";
 import { useDepositContext } from "../context/DepositContext";
 
 export interface DepositWidgetProps {
@@ -17,6 +17,21 @@ export interface DepositWidgetProps {
   onClose?: () => void;
   className?: string;
   theme?: "dark" | "light";
+  /**
+   * Destination configuration for where swept funds are sent.
+   * If provided, this takes precedence over the provider's destination config.
+   * @see DestinationConfig
+   */
+  destination?: DestinationConfig;
+  /**
+   * Callback when destination is changed (via edit UI or programmatically).
+   */
+  onDestinationChange?: (destination: DestinationConfig) => void;
+  /**
+   * Whether to show the destination section in the widget.
+   * @default true
+   */
+  showDestination?: boolean;
 }
 
 interface ActivityItem {
@@ -212,10 +227,19 @@ export function DepositWidget({
   onClose,
   className,
   theme = "dark",
+  destination: destinationProp,
+  onDestinationChange,
+  showDestination = true,
 }: DepositWidgetProps) {
   // Try to get client from context if not provided as prop
   const context = useOptionalDepositContext();
   const client = clientProp || context?.client || null;
+
+  // Track current destination
+  const [currentDestination, setCurrentDestination] = useState<{
+    address: string;
+    chainId: number;
+  } | null>(null);
 
   const [selectedChain, setSelectedChain] = useState(CHAIN_OPTIONS[0]);
   const [selectedToken, setSelectedToken] = useState<TokenType>(
@@ -254,6 +278,39 @@ export function DepositWidget({
     };
     getAddress();
   }, [client, selectedChain]);
+
+  // Use ref for callback to prevent infinite loops when consumer doesn't memoize
+  const onDestinationChangeRef = useRef(onDestinationChange);
+  onDestinationChangeRef.current = onDestinationChange;
+
+  // Sync destination prop to client and track current destination
+  useEffect(() => {
+    if (!client) {
+      setCurrentDestination(null);
+      return;
+    }
+
+    // If destination prop provided, apply it to the client
+    if (destinationProp) {
+      try {
+        client.setDestination(destinationProp);
+      } catch {
+        // Silently fail - client keeps previous destination
+        // Consumer can validate destination before passing to avoid this
+      }
+    }
+
+    // Get current destination from client
+    try {
+      const dest = client.getDestination();
+      setCurrentDestination(dest);
+      // Notify consumer of current destination
+      onDestinationChangeRef.current?.(dest);
+    } catch {
+      // Client may not be fully initialized
+      setCurrentDestination(null);
+    }
+  }, [client, destinationProp]);
 
   // Listen for deposit events
   useEffect(() => {
@@ -664,6 +721,67 @@ export function DepositWidget({
             </div>
           </div>
         </div>
+
+        {/* Destination Section */}
+        {showDestination && currentDestination && (
+          <div className="mx-6 mb-4">
+            <div
+              className={cn(
+                "rounded-xl border p-3 flex items-center justify-between",
+                theme === "dark"
+                  ? "bg-[#18181b] border-[#27272a]"
+                  : "bg-gray-50 border-gray-200"
+              )}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className={cn(
+                    "w-8 h-8 rounded-full flex items-center justify-center",
+                    theme === "dark" ? "bg-[#27272a]" : "bg-gray-200"
+                  )}
+                >
+                  {LOGO_URLS[currentDestination.chainId] ? (
+                    <img
+                      src={LOGO_URLS[currentDestination.chainId]}
+                      alt={getChainName(currentDestination.chainId)}
+                      className="w-5 h-5 rounded-full"
+                    />
+                  ) : (
+                    <div
+                      className={cn(
+                        "w-5 h-5 rounded-full",
+                        theme === "dark" ? "bg-[#3f3f46]" : "bg-gray-300"
+                      )}
+                    />
+                  )}
+                </div>
+                <div>
+                  <span
+                    className={cn(
+                      "text-[10px] font-medium uppercase tracking-wide block",
+                      theme === "dark" ? "text-[#71717a]" : "text-gray-500"
+                    )}
+                  >
+                    Sweep To
+                  </span>
+                  <span className="text-[13px] font-medium">
+                    {getChainName(currentDestination.chainId) || `Chain ${currentDestination.chainId}`}
+                  </span>
+                </div>
+              </div>
+              <div className="text-right">
+                <span
+                  className={cn(
+                    "font-mono text-[12px]",
+                    theme === "dark" ? "text-[#a1a1aa]" : "text-gray-600"
+                  )}
+                >
+                  {formatAddress(currentDestination.address)}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Activity Section */}
         <div

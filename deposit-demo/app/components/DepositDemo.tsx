@@ -10,7 +10,19 @@ import {
   useDeposit,
   DepositModal,
   RecoveryModal,
+  CHAIN,
+  type DestinationConfig,
 } from "@particle-network/deposit-sdk/react";
+
+// Available destination chains for the demo
+const DESTINATION_CHAINS = [
+  { id: CHAIN.ARBITRUM, name: "Arbitrum", color: "#12aaeb" },
+  { id: CHAIN.BASE, name: "Base", color: "#0052ff" },
+  { id: CHAIN.ETHEREUM, name: "Ethereum", color: "#627eea" },
+  { id: CHAIN.POLYGON, name: "Polygon", color: "#8247e5" },
+  { id: CHAIN.OPTIMISM, name: "Optimism", color: "#ff0420" },
+  { id: CHAIN.BNB, name: "BNB Chain", color: "#f3ba2f" },
+];
 
 const WALLET_CREATION_TIMEOUT_MS = 30000;
 
@@ -30,6 +42,17 @@ export function DepositDemo() {
   const { wallets } = useWallets();
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
+
+  // Destination configuration state
+  const [destinationChainId, setDestinationChainId] = useState<number>(CHAIN.ARBITRUM);
+  const [useCustomAddress, setUseCustomAddress] = useState(false);
+  const [customAddress, setCustomAddress] = useState("");
+
+  // Build destination config based on user selections
+  const destinationConfig: DestinationConfig = {
+    chainId: destinationChainId,
+    ...(useCustomAddress && customAddress ? { address: customAddress } : {}),
+  };
 
   // Use Privy's embedded wallet, not external wallets like MetaMask
   // For new users, this will be undefined until Privy creates the wallet
@@ -186,7 +209,88 @@ export function DepositDemo() {
 
         {/* Demo Options - Show when ready AND authenticated */}
         {isReady && authenticated && (
-          <div className="max-w-md mx-auto">
+          <div className="max-w-md mx-auto space-y-4">
+            {/* Destination Configuration */}
+            <div className="bg-zinc-900 rounded-xl p-6 border border-zinc-800">
+              <h2 className="text-lg font-semibold text-white mb-4">
+                Sweep Destination
+              </h2>
+              <p className="text-zinc-400 text-sm mb-4">
+                Configure where your deposited funds will be swept to.
+              </p>
+
+              {/* Chain Selection */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-zinc-300 mb-2">
+                  Destination Chain
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {DESTINATION_CHAINS.map((chain) => (
+                    <button
+                      key={chain.id}
+                      onClick={() => setDestinationChainId(chain.id)}
+                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                        destinationChainId === chain.id
+                          ? "bg-blue-600 text-white ring-2 ring-blue-400"
+                          : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                      }`}
+                    >
+                      {chain.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Custom Address Toggle */}
+              <div className="mb-4">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useCustomAddress}
+                    onChange={(e) => setUseCustomAddress(e.target.checked)}
+                    className="w-4 h-4 rounded bg-zinc-800 border-zinc-600 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-zinc-300">
+                    Use custom destination address
+                  </span>
+                </label>
+              </div>
+
+              {/* Custom Address Input */}
+              {useCustomAddress && (
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">
+                    Destination Address
+                  </label>
+                  <input
+                    type="text"
+                    value={customAddress}
+                    onChange={(e) => setCustomAddress(e.target.value)}
+                    placeholder="0x..."
+                    className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                  />
+                  <p className="text-zinc-500 text-xs mt-1">
+                    Leave empty to use your connected wallet address
+                  </p>
+                </div>
+              )}
+
+              {/* Current Config Display */}
+              <div className="p-3 bg-zinc-800/50 rounded-lg border border-zinc-700">
+                <p className="text-xs text-zinc-500 mb-1">Current destination:</p>
+                <p className="text-sm text-white font-medium">
+                  {DESTINATION_CHAINS.find((c) => c.id === destinationChainId)?.name}
+                  {" → "}
+                  <span className="font-mono text-zinc-400">
+                    {useCustomAddress && customAddress
+                      ? `${customAddress.slice(0, 6)}...${customAddress.slice(-4)}`
+                      : "Your wallet"}
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            {/* SDK Widgets */}
             <div className="bg-zinc-900 rounded-xl p-6 border border-zinc-800">
               <h2 className="text-lg font-semibold text-white mb-4">
                 SDK Widgets Demo
@@ -226,7 +330,8 @@ export function DepositDemo() {
               <div className="p-4 bg-green-900/20 border border-green-500/30 rounded-lg">
                 <p className="text-green-400 text-sm">
                   ✅ Auto-sweep enabled. Send assets to the deposit address and
-                  they will be automatically swept to your wallet on Arbitrum.
+                  they will be automatically swept to{" "}
+                  {DESTINATION_CHAINS.find((c) => c.id === destinationChainId)?.name}.
                 </p>
               </div>
             </div>
@@ -238,6 +343,7 @@ export function DepositDemo() {
           isOpen={showDepositModal}
           onClose={() => setShowDepositModal(false)}
           theme="dark"
+          destination={destinationConfig}
         />
 
         <RecoveryModal
