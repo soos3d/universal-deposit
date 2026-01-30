@@ -290,11 +290,38 @@ function App() {
 
 **Config Options:**
 - `destination.chainId` — Sweep destination chain (default: Arbitrum 42161)
+- `destination.address` — Custom sweep destination address (default: user's EOA)
 - `supportedTokens` — Array of token types to support
 - `supportedChains` — Array of chain IDs to support
 - `autoSweep` — Enable auto-sweep (default: true)
 - `minValueUSD` — Minimum deposit value in USD (default: 0.5)
 - `pollingIntervalMs` — Balance polling interval (default: 8000)
+
+**Destination Examples:**
+
+```tsx
+import { DepositProvider, CHAIN } from '@particle-network/deposit-sdk/react';
+
+// Default: sweep to user's EOA on Arbitrum
+<DepositProvider>
+  <App />
+</DepositProvider>
+
+// Sweep to user's EOA on Base
+<DepositProvider config={{ destination: { chainId: CHAIN.BASE } }}>
+  <App />
+</DepositProvider>
+
+// Sweep to a treasury address on Ethereum
+<DepositProvider config={{
+  destination: {
+    chainId: CHAIN.ETHEREUM,
+    address: '0xTreasury...',
+  }
+}}>
+  <App />
+</DepositProvider>
+```
 
 ### useDeposit Hook
 
@@ -330,6 +357,8 @@ function MyComponent() {
     startWatching,
     stopWatching,
     sweep,
+    setDestination,      // Change destination at runtime
+    currentDestination,  // Current { address, chainId }
 
     // Recovery
     stuckFunds,
@@ -523,6 +552,8 @@ Main entry point for the SDK. Manages lifecycle, configuration, and coordinates 
 - `getDepositAddresses()` - Returns EVM + Solana addresses
 - `startWatching()` / `stopWatching()` - Control balance monitoring
 - `sweep()` - Manual sweep trigger
+- `setDestination({ chainId?, address? })` - Change destination at runtime
+- `getDestination()` - Get current destination config
 - `getStuckFunds()` - Get all non-zero balances (for recovery)
 - `recoverAllFunds()` - Attempt to sweep all stuck funds
 - `destroy()` - Cleanup

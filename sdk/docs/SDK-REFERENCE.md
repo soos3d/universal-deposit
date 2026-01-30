@@ -166,6 +166,44 @@ Get resolved configuration.
 const config = client.getConfig();
 ```
 
+##### `setDestination(destination): void`
+
+Change the sweep destination at runtime. Takes effect immediately for subsequent sweeps.
+
+```typescript
+import { CHAIN } from '@particle-network/deposit-sdk';
+
+// Change destination chain
+client.setDestination({ chainId: CHAIN.BASE });
+
+// Change destination address
+client.setDestination({ address: '0xTreasury...' });
+
+// Change both
+client.setDestination({
+  chainId: CHAIN.ETHEREUM,
+  address: '0xTreasury...',
+});
+```
+
+**Parameters:**
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `chainId` | `number` | New destination chain (optional, keeps current if not specified) |
+| `address` | `string` | New destination address (optional, keeps current if not specified) |
+
+**Throws:** `ConfigurationError` if chain ID or address is invalid.
+
+##### `getDestination(): { address: string; chainId: number }`
+
+Get current destination configuration.
+
+```typescript
+const dest = client.getDestination();
+console.log(`Sweeping to ${dest.address} on chain ${dest.chainId}`);
+```
+
 ---
 
 ## React Integration
@@ -191,11 +229,38 @@ function App() {
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `destination.chainId` | `number` | `42161` | Sweep destination chain |
+| `destination.address` | `string` | Owner's EOA | Custom sweep destination address |
 | `supportedTokens` | `TokenType[]` | All | Tokens to support |
 | `supportedChains` | `number[]` | All | Chains to support |
 | `autoSweep` | `boolean` | `true` | Enable auto-sweep |
 | `minValueUSD` | `number` | `0.10` | Minimum USD threshold |
 | `pollingIntervalMs` | `number` | `8000` | Polling interval |
+
+**Destination Examples:**
+
+```tsx
+import { DepositProvider, CHAIN } from '@particle-network/deposit-sdk/react';
+
+// Default: sweep to user's EOA on Arbitrum
+<DepositProvider>
+  <App />
+</DepositProvider>
+
+// Sweep to user's EOA on Base
+<DepositProvider config={{ destination: { chainId: CHAIN.BASE } }}>
+  <App />
+</DepositProvider>
+
+// Sweep to a treasury address
+<DepositProvider config={{
+  destination: {
+    chainId: CHAIN.ETHEREUM,
+    address: '0xTreasury...',
+  }
+}}>
+  <App />
+</DepositProvider>
+```
 
 ### useDeposit
 
@@ -262,6 +327,8 @@ function Component() {
 | `startWatching` | `() => void` | Start watching |
 | `stopWatching` | `() => void` | Stop watching |
 | `sweep` | `(id?: string) => Promise<SweepResult[]>` | Trigger sweep |
+| `setDestination` | `(dest: DestinationConfig) => void` | Change destination at runtime |
+| `currentDestination` | `{ address: string; chainId: number } \| null` | Current destination |
 | `stuckFunds` | `DetectedDeposit[]` | Stuck funds list |
 | `isRecovering` | `boolean` | Recovery in progress |
 | `getStuckFunds` | `() => Promise<DetectedDeposit[]>` | Refresh stuck funds |
@@ -359,6 +426,50 @@ import { RecoveryModal } from '@particle-network/deposit-sdk/react';
 
 ```typescript
 type TokenType = 'ETH' | 'USDC' | 'USDT' | 'BTC' | 'SOL' | 'BNB';
+```
+
+### DestinationConfig
+
+Configuration for where swept funds are sent.
+
+```typescript
+interface DestinationConfig {
+  /**
+   * The address to receive swept funds.
+   * Defaults to ownerAddress if not specified.
+   * For EVM chains: 0x-prefixed address (42 characters)
+   * For Solana: base58 address (32-44 characters)
+   */
+  address?: string;
+
+  /**
+   * The chain ID to sweep funds to.
+   * Defaults to Arbitrum (42161) if not specified.
+   * Must be a supported chain from the CHAIN constant.
+   */
+  chainId?: number;
+}
+```
+
+**Examples:**
+
+```typescript
+import { CHAIN } from '@particle-network/deposit-sdk';
+
+// Default: sweep to owner's EOA on Arbitrum
+destination: undefined
+
+// Sweep to owner's EOA on Base
+destination: { chainId: CHAIN.BASE }
+
+// Sweep to a custom treasury on Arbitrum
+destination: { address: '0xTreasury...' }
+
+// Sweep to a custom address on Ethereum mainnet
+destination: {
+  chainId: CHAIN.ETHEREUM,
+  address: '0xTreasury...',
+}
 ```
 
 ### DepositAddresses
@@ -555,6 +666,48 @@ import {
 } from '@particle-network/deposit-sdk';
 ```
 
+### Chain Validation Utilities
+
+Helper functions for validating chains and addresses.
+
+```typescript
+import {
+  getChainName,
+  isValidDestinationChain,
+  getAddressType,
+  isValidEvmAddress,
+  isValidSolanaAddress,
+  validateAddressForChain,
+} from '@particle-network/deposit-sdk';
+
+// Get chain name
+getChainName(42161);  // "Arbitrum"
+getChainName(8453);   // "Base"
+getChainName(101);    // "Solana"
+getChainName(99999);  // "Unknown Chain (99999)"
+
+// Check if chain is valid destination
+isValidDestinationChain(42161);  // true
+isValidDestinationChain(99999);  // false
+
+// Get address type for chain
+getAddressType(42161);  // 'evm'
+getAddressType(101);    // 'solana'
+getAddressType(99999);  // null
+
+// Validate EVM address format
+isValidEvmAddress('0x1234567890123456789012345678901234567890');  // true
+isValidEvmAddress('invalid');  // false
+
+// Validate Solana address format
+isValidSolanaAddress('7qSo38so1uwrPqTGpcXe94Z9LpBtZghQncLvVfreYCyX');  // true
+isValidSolanaAddress('invalid');  // false
+
+// Validate address for specific chain
+validateAddressForChain('0x123...', 42161);  // { isValid: true }
+validateAddressForChain('0x123...', 101);    // { isValid: false, error: 'Invalid Solana address format' }
+```
+
 ---
 
 ## Full Example
@@ -563,15 +716,22 @@ import {
 import {
   DepositProvider,
   useDeposit,
+  useDepositContext,
   DepositModal,
   RecoveryModal,
+  CHAIN,
 } from '@particle-network/deposit-sdk/react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useState } from 'react';
 
 function App() {
   return (
-    <DepositProvider config={{ autoSweep: true }}>
+    <DepositProvider config={{
+      autoSweep: true,
+      destination: {
+        chainId: CHAIN.BASE,  // Sweep to Base instead of Arbitrum
+      },
+    }}>
       <DepositPage />
     </DepositProvider>
   );
@@ -585,6 +745,9 @@ function DepositPage() {
   const { isReady, isConnecting, error, disconnect } = useDeposit({
     ownerAddress: authenticated ? ownerAddress : undefined,
   });
+
+  // Access setDestination and currentDestination from context
+  const { setDestination, currentDestination } = useDepositContext();
 
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
@@ -607,6 +770,20 @@ function DepositPage() {
 
   return (
     <div>
+      {/* Show current destination */}
+      {currentDestination && (
+        <p>
+          Sweeping to chain {currentDestination.chainId}
+        </p>
+      )}
+
+      {/* Runtime destination change */}
+      <select onChange={(e) => setDestination({ chainId: Number(e.target.value) })}>
+        <option value={CHAIN.BASE}>Base</option>
+        <option value={CHAIN.ARBITRUM}>Arbitrum</option>
+        <option value={CHAIN.ETHEREUM}>Ethereum</option>
+      </select>
+
       <button onClick={() => setShowDepositModal(true)}>
         Open Deposit
       </button>
