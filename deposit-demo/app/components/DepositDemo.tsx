@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePrivy, useWallets, getEmbeddedConnectedWallet } from "@privy-io/react-auth";
 import { useDeposit, DepositModal } from "@particle-network/deposit-sdk/react";
+
+const WALLET_CREATION_TIMEOUT_MS = 30000;
 
 /**
  * Simplified Deposit Demo using the new SDK API.
@@ -29,6 +31,22 @@ export function DepositDemo() {
   const isWalletReady = authenticated && !!ownerAddress;
   const isWalletPending = authenticated && !ownerAddress;
 
+  // Track if wallet creation has timed out (stuck state)
+  const [isWalletTimedOut, setIsWalletTimedOut] = useState(false);
+
+  useEffect(() => {
+    if (!isWalletPending) {
+      setIsWalletTimedOut(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setIsWalletTimedOut(true);
+    }, WALLET_CREATION_TIMEOUT_MS);
+
+    return () => clearTimeout(timer);
+  }, [isWalletPending]);
+
   // Only pass ownerAddress when wallet is actually ready
   // This prevents SDK initialization before Privy finishes wallet creation
   const { isConnecting, isReady, error, disconnect } = useDeposit({
@@ -37,6 +55,11 @@ export function DepositDemo() {
 
   const handleDisconnect = async () => {
     await disconnect();
+    logout();
+  };
+
+  // Reset auth when stuck in wallet creation (SDK not initialized yet)
+  const handleResetAuth = () => {
     logout();
   };
 
@@ -99,10 +122,38 @@ export function DepositDemo() {
         )}
 
         {/* Wallet Creation State - for new users */}
-        {isWalletPending && (
-          <div className="mb-6 p-4 bg-yellow-900/30 border border-yellow-500/30 rounded-lg flex items-center gap-3">
-            <div className="animate-spin w-4 h-4 border-2 border-yellow-400 border-t-transparent rounded-full" />
-            <p className="text-yellow-400">Creating your wallet...</p>
+        {isWalletPending && !isWalletTimedOut && (
+          <div className="mb-6 p-4 bg-yellow-900/30 border border-yellow-500/30 rounded-lg flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="animate-spin w-4 h-4 border-2 border-yellow-400 border-t-transparent rounded-full" />
+              <p className="text-yellow-400">Creating your wallet...</p>
+            </div>
+            <button
+              onClick={handleResetAuth}
+              className="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {/* Stuck State - wallet creation timed out */}
+        {isWalletPending && isWalletTimedOut && (
+          <div className="mb-6 p-4 bg-red-900/30 border border-red-500/30 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-red-400 font-medium">Wallet creation appears stuck</p>
+                <p className="text-red-400/70 text-sm mt-1">
+                  This is taking longer than expected. Try resetting and logging in again.
+                </p>
+              </div>
+              <button
+                onClick={handleResetAuth}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
+              >
+                Reset & Try Again
+              </button>
+            </div>
           </div>
         )}
 
