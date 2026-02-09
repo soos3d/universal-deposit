@@ -18,7 +18,6 @@ import type {
   RefundConfig,
   RefundReason,
   TokenType,
-  UATransaction,
 } from './types';
 import { RefundService, DEFAULT_REFUND_CONFIG } from '../refund';
 import {
@@ -67,7 +66,10 @@ export class DepositClient extends TypedEventEmitter<DepositEvents> {
   private status: ClientStatus = 'idle';
   private depositAddresses: DepositAddresses | null = null;
   private pendingDeposits: Map<string, DetectedDeposit> = new Map();
-  
+  private sweepRetries: Map<string, number> = new Map();
+  private originalDepositIds: Map<string, string> = new Map();
+  private static readonly MAX_SWEEP_RETRIES = 3;
+
   // Services
   private intermediaryService: IntermediaryService;
   private intermediarySession: IntermediarySession | null = null;
@@ -262,6 +264,10 @@ export class DepositClient extends TypedEventEmitter<DepositEvents> {
         this.handleDepositDetected(deposit);
       });
 
+      this.balanceWatcher.on('deposit:below_threshold', (deposit) => {
+        this.emit('deposit:below_threshold', deposit);
+      });
+
       this.balanceWatcher.on('error', (error) => {
         this.emit('deposit:error', error);
       });
@@ -277,6 +283,8 @@ export class DepositClient extends TypedEventEmitter<DepositEvents> {
     this.stopWatching();
     this.removeAllListeners();
     this.pendingDeposits.clear();
+    this.sweepRetries.clear();
+    this.originalDepositIds.clear();
     this.refundAttempts.clear();
     this.depositAddresses = null;
     this.intermediarySession = null;
@@ -551,6 +559,67 @@ export class DepositClient extends TypedEventEmitter<DepositEvents> {
     return results;
   }
 
+  /**
+   * Recover a single deposit (e.g. a below-threshold deposit that wasn't auto-swept).
+   * Sweeps the given deposit to the configured destination.
+   *
+   * @param deposit - The deposit to recover
+   * @returns RecoveryResult with status and details
+   */
+  async recoverSingleDeposit(deposit: DetectedDeposit): Promise<RecoveryResult> {
+    if (!this.sweeper) {
+      throw new ConfigurationError('Client not initialized. Call initialize() first.');
+    }
+
+    console.log(`[DepositSDK] Recovering single deposit: ${deposit.token} on chain ${deposit.chainId}...`);
+
+    const previousStatus = this.status;
+    this.setStatus('sweeping');
+
+    try {
+      const sweepResult = await this.sweeper.sweep(deposit);
+
+      const result: RecoveryResult = {
+        token: deposit.token,
+        chainId: deposit.chainId,
+        amount: deposit.amount,
+        amountUSD: deposit.amountUSD,
+        status: sweepResult.status === 'success' ? 'success' : 'failed',
+        txHash: sweepResult.transactionId || undefined,
+        error: sweepResult.error,
+      };
+
+      if (sweepResult.status === 'success' && this.balanceWatcher) {
+        const key = `${deposit.token.toLowerCase()}:${deposit.chainId}`;
+        this.balanceWatcher.clearProcessingKey(key);
+      }
+
+      this.emit('recovery:complete', [result]);
+      return result;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`[DepositSDK] Single recovery failed for ${deposit.token} on chain ${deposit.chainId}:`, error);
+
+      const result: RecoveryResult = {
+        token: deposit.token,
+        chainId: deposit.chainId,
+        amount: deposit.amount,
+        amountUSD: deposit.amountUSD,
+        status: 'failed',
+        error: errorMessage,
+      };
+
+      this.emit('recovery:failed', deposit, error instanceof Error ? error : new Error(errorMessage));
+      return result;
+    } finally {
+      if (this.balanceWatcher?.isActive()) {
+        this.setStatus('watching');
+      } else {
+        this.setStatus(previousStatus === 'sweeping' ? 'ready' : previousStatus);
+      }
+    }
+  }
+
   // ============================================
   // State Accessors
   // ============================================
@@ -629,29 +698,6 @@ export class DepositClient extends TypedEventEmitter<DepositEvents> {
     return this.config.destination;
   }
 
-  /**
-   * Get transaction history from the Universal Account.
-   *
-   * Returns recent transactions ordered by most recent first.
-   * Useful for displaying deposit history in the UI.
-   *
-   * @param limit - Maximum number of transactions to return (default: 3)
-   * @returns Array of transactions
-   *
-   * @example
-   * const history = await client.getTransactionHistory(5);
-   * history.forEach(tx => {
-   *   console.log(`${tx.targetToken.symbol}: ${tx.change.amount}`);
-   * });
-   */
-  async getTransactionHistory(limit: number = 3): Promise<UATransaction[]> {
-    if (!this.uaManager) {
-      throw new ConfigurationError('Client not initialized. Call initialize() first.');
-    }
-
-    return this.uaManager.getTransactions(1, limit);
-  }
-
   // ============================================
   // Internal Helpers
   // ============================================
@@ -690,28 +736,60 @@ export class DepositClient extends TypedEventEmitter<DepositEvents> {
   }
 
   /**
-   * Handle a detected deposit
+   * Handle a detected deposit.
+   *
+   * Uses a retryKey (token:chainId) to deduplicate re-detections after
+   * a failed sweep. Preserves the original deposit ID across retries so
+   * the UI can match activity items correctly. On failure, clears the
+   * BalanceWatcher processingKey so the same deposit can be re-detected
+   * on the next poll cycle. After MAX_SWEEP_RETRIES exhausted, emits
+   * deposit:error.
    */
   private handleDepositDetected(deposit: DetectedDeposit): void {
-    console.log('[DepositSDK] Deposit detected:', deposit);
+    const retryKey = `${deposit.token.toLowerCase()}:${deposit.chainId}`;
+    const attempts = this.sweepRetries.get(retryKey) || 0;
 
-    // Store in pending deposits
-    this.pendingDeposits.set(deposit.id, deposit);
-
-    // Emit event
-    this.emit('deposit:detected', deposit);
+    // If this is a re-detection after a failed sweep, preserve the original
+    // deposit ID so the UI activity item can be updated (not duplicated)
+    if (attempts > 0) {
+      const originalId = this.originalDepositIds.get(retryKey);
+      if (originalId) {
+        // Remove stale pendingDeposit entry (previous detection had different ID)
+        for (const [id] of this.pendingDeposits) {
+          if (id !== originalId && id.startsWith(retryKey.replace(':', ':'))) {
+            this.pendingDeposits.delete(id);
+          }
+        }
+        deposit = { ...deposit, id: originalId };
+      }
+      console.log(`[DepositSDK] Re-detected deposit (retry ${attempts + 1}/${DepositClient.MAX_SWEEP_RETRIES}):`, deposit);
+      this.pendingDeposits.set(deposit.id, deposit);
+      this.emit('deposit:processing', deposit);
+    } else {
+      console.log('[DepositSDK] Deposit detected:', deposit);
+      this.originalDepositIds.set(retryKey, deposit.id);
+      this.pendingDeposits.set(deposit.id, deposit);
+      this.emit('deposit:detected', deposit);
+    }
 
     // Auto-sweep if enabled
     if (this.config.autoSweep && this.sweeper) {
-      this.emit('deposit:processing', deposit);
+      if (attempts === 0) {
+        this.emit('deposit:processing', deposit);
+      }
       this.setStatus('sweeping');
 
-      this.sweeper.sweep(deposit)
+      const currentDeposit = deposit;
+      this.sweeper.sweep(currentDeposit)
         .then((result) => {
-          // Remove from pending
-          this.pendingDeposits.delete(deposit.id);
-          this.refundAttempts.delete(deposit.id);
-          this.emit('deposit:complete', result);
+          // Success - clean up all tracking state
+          this.pendingDeposits.delete(currentDeposit.id);
+          this.refundAttempts.delete(currentDeposit.id);
+          this.sweepRetries.delete(retryKey);
+          this.originalDepositIds.delete(retryKey);
+          // Use the original ID in the result so the UI can match it
+          const resultWithOriginalId = { ...result, depositId: currentDeposit.id };
+          this.emit('deposit:complete', resultWithOriginalId);
 
           // Return to watching if still active
           if (this.balanceWatcher?.isActive()) {
@@ -721,19 +799,36 @@ export class DepositClient extends TypedEventEmitter<DepositEvents> {
           }
         })
         .catch((error) => {
-          console.error('[DepositSDK] Auto-sweep failed:', error);
-          this.emit('deposit:error', error, deposit);
+          console.error(`[DepositSDK] Auto-sweep failed (attempt ${attempts + 1}/${DepositClient.MAX_SWEEP_RETRIES}):`, error);
 
-          // Attempt auto-refund if enabled
-          if (this.config.refund.enabled && this.refundService) {
-            this.handleSweepFailure(deposit, 'sweep_failed');
-          } else {
-            // Return to watching if still active
-            if (this.balanceWatcher?.isActive()) {
-              this.setStatus('watching');
-            } else {
-              this.setStatus('ready');
+          // Always emit error so UI never stays stuck on "Processing..."
+          // On retry re-detection, deposit:processing will be emitted to show retrying
+          this.emit('deposit:error', error, currentDeposit);
+
+          if (attempts + 1 < DepositClient.MAX_SWEEP_RETRIES) {
+            // Still have retries left - clear processingKey so BalanceWatcher
+            // re-detects on next poll, and increment retry counter
+            this.sweepRetries.set(retryKey, attempts + 1);
+            if (this.balanceWatcher) {
+              this.balanceWatcher.clearProcessingKey(retryKey);
             }
+          } else {
+            // All retries exhausted - clean up retry tracking
+            this.sweepRetries.delete(retryKey);
+            this.originalDepositIds.delete(retryKey);
+
+            // Attempt auto-refund if enabled
+            if (this.config.refund.enabled && this.refundService) {
+              this.handleSweepFailure(currentDeposit, 'sweep_failed');
+              return;
+            }
+          }
+
+          // Return to watching if still active
+          if (this.balanceWatcher?.isActive()) {
+            this.setStatus('watching');
+          } else {
+            this.setStatus('ready');
           }
         });
     }

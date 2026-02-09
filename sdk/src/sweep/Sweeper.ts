@@ -29,37 +29,47 @@ export interface SweepAttempt {
 
 export class Sweeper {
   private config: SweeperConfig;
-  private sweepLock = false;
+  private sweepQueue: Promise<void> = Promise.resolve();
+  private sweeping = false;
+  private pendingCount = 0;
 
   constructor(config: SweeperConfig) {
     this.config = config;
   }
 
   /**
-   * Sweep a detected deposit to the destination
+   * Sweep a detected deposit to the destination.
+   * Concurrent calls are queued and executed sequentially.
    */
   async sweep(deposit: DetectedDeposit): Promise<SweepResult> {
-    if (this.sweepLock) {
-      throw new SweepError('Sweep already in progress');
-    }
-
-    this.sweepLock = true;
-
-    try {
-      console.log(`[Sweeper] Starting sweep: ${deposit.token} on chain ${deposit.chainId}`);
-
-      const result = await this.executeSweep(deposit);
-      return result;
-    } finally {
-      this.sweepLock = false;
-    }
+    this.pendingCount++;
+    return new Promise<SweepResult>((resolve, reject) => {
+      this.sweepQueue = this.sweepQueue
+        .then(async () => {
+          this.sweeping = true;
+          try {
+            console.log(`[Sweeper] Starting sweep: ${deposit.token} on chain ${deposit.chainId}`);
+            const result = await this.executeSweep(deposit);
+            resolve(result);
+          } catch (error) {
+            reject(error);
+          } finally {
+            this.sweeping = false;
+            this.pendingCount--;
+          }
+        })
+        .catch(() => {
+          // Ensure queue chain is never broken.
+          // Individual errors are forwarded via reject() above.
+        });
+    });
   }
 
   /**
    * Check if a sweep is currently in progress
    */
   isSweeping(): boolean {
-    return this.sweepLock;
+    return this.sweeping || this.pendingCount > 0;
   }
 
   /**

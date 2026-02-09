@@ -25,12 +25,13 @@ export interface BalanceWatcherConfig {
 
 export type BalanceWatcherEvents = {
   'deposit:detected': (deposit: DetectedDeposit) => void;
+  'deposit:below_threshold': (deposit: DetectedDeposit) => void;
   'error': (error: Error) => void;
   [key: string]: (...args: any[]) => void;
 };
 
-// Time after which a processing key is considered stale (5 minutes)
-const PROCESSING_KEY_EXPIRY_MS = 5 * 60 * 1000;
+// Time after which a processing key is considered stale (2 minutes)
+const PROCESSING_KEY_EXPIRY_MS = 2 * 60 * 1000;
 // Maximum number of processing keys to prevent unbounded memory growth
 const MAX_PROCESSING_KEYS = 100;
 
@@ -41,6 +42,8 @@ export class BalanceWatcher extends TypedEventEmitter<BalanceWatcherEvents> {
   private isWatching = false;
   // Store processing keys with timestamps for auto-expiration
   private processingKeys: Map<string, number> = new Map();
+  // Track emitted below-threshold keys to prevent duplicate events
+  private belowThresholdKeys: Set<string> = new Set();
   private initialCheckDone = false;
 
   constructor(config: BalanceWatcherConfig) {
@@ -179,6 +182,7 @@ export class BalanceWatcher extends TypedEventEmitter<BalanceWatcherEvents> {
   reset(): void {
     this.lastSnapshot = null;
     this.processingKeys.clear();
+    this.belowThresholdKeys.clear();
     this.initialCheckDone = false;
   }
 
@@ -209,7 +213,8 @@ export class BalanceWatcher extends TypedEventEmitter<BalanceWatcherEvents> {
         this.cleanupStaleProcessingKeys();
         const deposits = this.detectChanges(this.lastSnapshot, currentSnapshot);
         for (const deposit of deposits) {
-          const key = `${deposit.token}:${deposit.chainId}`;
+          // Normalize to lowercase to match clearProcessingKey format
+          const key = `${deposit.token.toLowerCase()}:${deposit.chainId}`;
           if (!this.processingKeys.has(key)) {
             this.processingKeys.set(key, Date.now());
             this.emit('deposit:detected', deposit);
@@ -262,6 +267,27 @@ export class BalanceWatcher extends TypedEventEmitter<BalanceWatcherEvents> {
 
         this.processingKeys.set(key, Date.now());
         this.emit('deposit:detected', {
+          id: `${key}:${Date.now()}`,
+          token: tokenType.toUpperCase() as TokenType,
+          chainId,
+          amount: amount.toString(),
+          amountUSD: valueUSD,
+          rawAmount: amount,
+          detectedAt: Date.now(),
+        });
+      } else if (amount > 0n && valueUSD > 0 && valueUSD < this.config.minValueUSD) {
+        if (this.belowThresholdKeys.has(key)) continue;
+
+        const [tokenType, chainIdStr] = key.split(':');
+        const chainId = Number(chainIdStr);
+
+        if (!this.config.supportedTokens.includes(tokenType.toUpperCase())) continue;
+        if (!this.config.supportedChains.includes(chainId)) continue;
+
+        console.log(`[BalanceWatcher] Below-threshold deposit: ${tokenType} on chain ${chainId} ($${valueUSD.toFixed(2)})`);
+
+        this.belowThresholdKeys.add(key);
+        this.emit('deposit:below_threshold', {
           id: `${key}:${Date.now()}`,
           token: tokenType.toUpperCase() as TokenType,
           chainId,
@@ -330,6 +356,29 @@ export class BalanceWatcher extends TypedEventEmitter<BalanceWatcherEvents> {
         console.log(`[BalanceWatcher] Detected deposit: ${tokenType} on chain ${chainId}, delta: ${deltaAmount}`);
 
         deposits.push({
+          id: `${key}:${Date.now()}`,
+          token: tokenType.toUpperCase() as TokenType,
+          chainId,
+          amount: deltaAmount.toString(),
+          amountUSD: valueUSD,
+          rawAmount: deltaAmount,
+          detectedAt: Date.now(),
+        });
+      } else if (currentAmount > prevAmount && valueUSD > 0 && valueUSD < this.config.minValueUSD) {
+        if (this.belowThresholdKeys.has(key)) continue;
+
+        const [tokenType, chainIdStr] = key.split(':');
+        const chainId = Number(chainIdStr);
+
+        if (!this.config.supportedTokens.includes(tokenType.toUpperCase())) continue;
+        if (!this.config.supportedChains.includes(chainId)) continue;
+
+        const deltaAmount = currentAmount - prevAmount;
+
+        console.log(`[BalanceWatcher] Below-threshold deposit: ${tokenType} on chain ${chainId}, delta: ${deltaAmount}`);
+
+        this.belowThresholdKeys.add(key);
+        this.emit('deposit:below_threshold', {
           id: `${key}:${Date.now()}`,
           token: tokenType.toUpperCase() as TokenType,
           chainId,

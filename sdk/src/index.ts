@@ -34,8 +34,6 @@ export type {
   RefundResult,
   RefundReason,
   DepositOrigin,
-  // Transaction history
-  UATransaction,
 } from './core/types';
 
 // Errors

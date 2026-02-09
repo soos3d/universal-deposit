@@ -340,6 +340,7 @@ export type ClientStatus =
 
 export type DepositEvents = {
   'deposit:detected': (deposit: DetectedDeposit) => void;
+  'deposit:below_threshold': (deposit: DetectedDeposit) => void;
   'deposit:processing': (deposit: DetectedDeposit) => void;
   'deposit:complete': (result: SweepResult) => void;
   'deposit:error': (error: Error, deposit?: DetectedDeposit) => void;

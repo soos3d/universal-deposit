@@ -1,16 +1,16 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { X, Copy, QrCode, Check, Clock, AlertCircle } from "lucide-react";
+import { X, Copy, QrCode, Check, Clock, AlertCircle, AlertTriangle } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { cn } from "../utils/cn";
 import type { DepositClient } from "../../core/DepositClient";
 import type {
   DetectedDeposit,
   SweepResult,
+  RecoveryResult,
   TokenType,
   DestinationConfig,
-  UATransaction,
 } from "../../core/types";
 import { CHAIN, CHAIN_META, getChainName } from "../../constants/chains";
 import { getTokenDecimals } from "../../constants/tokens";
@@ -56,16 +56,13 @@ export interface DepositWidgetProps {
 
 interface ActivityItem {
   id: string;
-  type: "detected" | "processing" | "complete" | "error" | "history";
+  type: "detected" | "processing" | "complete" | "error" | "below_threshold";
   token: string;
   chainId: number;
-  destinationChainId?: number;
   amount: string;
+  amountUSD: number;
   timestamp: number;
   message?: string;
-  amountUSD?: number;
-  tokenImage?: string;
-  isOutgoing?: boolean;
 }
 
 const LOGO_URLS: Record<string, string> = {
@@ -285,6 +282,7 @@ export function DepositWidget({
   const [copied, setCopied] = useState(false);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [depositAddress, setDepositAddress] = useState<string>("");
+  const recoveringIdsRef = useRef<Set<string>>(new Set());
 
   // Get deposit address based on selected chain
   useEffect(() => {
@@ -338,6 +336,73 @@ export function DepositWidget({
     }
   }, [client, destinationProp]);
 
+  const handleRecover = useCallback(
+    async (item: ActivityItem) => {
+      if (!client || recoveringIdsRef.current.has(item.id)) return;
+
+      recoveringIdsRef.current.add(item.id);
+      setActivity((prev) =>
+        prev.map((a) =>
+          a.id === item.id ? { ...a, type: "processing" as const } : a,
+        ),
+      );
+
+      try {
+        const deposit: DetectedDeposit = {
+          id: item.id,
+          token: item.token as DetectedDeposit["token"],
+          chainId: item.chainId,
+          amount: item.amount,
+          amountUSD: item.amountUSD,
+          rawAmount: BigInt(item.amount),
+          detectedAt: item.timestamp,
+        };
+        const result = await client.recoverSingleDeposit(deposit);
+        if (result.status === "success") {
+          setActivity((prev) =>
+            prev.map((a) =>
+              a.id === item.id
+                ? {
+                    ...a,
+                    type: "complete" as const,
+                    message: "Recovered successfully",
+                  }
+                : a,
+            ),
+          );
+        } else {
+          setActivity((prev) =>
+            prev.map((a) =>
+              a.id === item.id
+                ? {
+                    ...a,
+                    type: "error" as const,
+                    message: result.error || "Recovery failed",
+                  }
+                : a,
+            ),
+          );
+        }
+      } catch (error) {
+        setActivity((prev) =>
+          prev.map((a) =>
+            a.id === item.id
+              ? {
+                  ...a,
+                  type: "error" as const,
+                  message:
+                    error instanceof Error ? error.message : "Recovery failed",
+                }
+              : a,
+          ),
+        );
+      } finally {
+        recoveringIdsRef.current.delete(item.id);
+      }
+    },
+    [client],
+  );
+
   // Listen for deposit events
   useEffect(() => {
     if (!client) return;
@@ -350,10 +415,36 @@ export function DepositWidget({
           token: deposit.token,
           chainId: deposit.chainId,
           amount: deposit.amount,
+          amountUSD: deposit.amountUSD,
           timestamp: Date.now(),
         },
         ...prev,
       ]);
+    };
+
+    const handleBelowThreshold = (deposit: DetectedDeposit) => {
+      setActivity((prev) => {
+        const exists = prev.some(
+          (item) =>
+            item.type === "below_threshold" &&
+            item.token === deposit.token &&
+            item.chainId === deposit.chainId,
+        );
+        if (exists) return prev;
+        return [
+          {
+            id: deposit.id,
+            type: "below_threshold" as const,
+            token: deposit.token,
+            chainId: deposit.chainId,
+            amount: deposit.amount,
+            amountUSD: deposit.amountUSD,
+            timestamp: Date.now(),
+            message: "Too small to auto-bridge",
+          },
+          ...prev,
+        ];
+      });
     };
 
     const handleProcessing = (deposit: DetectedDeposit) => {
@@ -386,114 +477,49 @@ export function DepositWidget({
       }
     };
 
+    const handleRecoveryComplete = (results: RecoveryResult[]) => {
+      const consumedIndices = new Set<number>();
+      setActivity((prev) =>
+        prev.map((item) => {
+          if (item.type !== "error" && item.type !== "below_threshold")
+            return item;
+
+          const idx = results.findIndex(
+            (r, i) =>
+              !consumedIndices.has(i) &&
+              r.status === "success" &&
+              r.token === item.token &&
+              r.chainId === item.chainId,
+          );
+          if (idx !== -1) {
+            consumedIndices.add(idx);
+            return {
+              ...item,
+              type: "complete" as const,
+              message: "Recovered successfully",
+            };
+          }
+          return item;
+        }),
+      );
+    };
+
     client.on("deposit:detected", handleDetected);
+    client.on("deposit:below_threshold", handleBelowThreshold);
     client.on("deposit:processing", handleProcessing);
     client.on("deposit:complete", handleComplete);
     client.on("deposit:error", handleError);
+    client.on("recovery:complete", handleRecoveryComplete);
 
     return () => {
       client.off("deposit:detected", handleDetected);
+      client.off("deposit:below_threshold", handleBelowThreshold);
       client.off("deposit:processing", handleProcessing);
       client.off("deposit:complete", handleComplete);
       client.off("deposit:error", handleError);
+      client.off("recovery:complete", handleRecoveryComplete);
     };
   }, [client]);
-
-  // Fetch transaction history - extracted as callback for reuse
-  const fetchHistory = useCallback(async () => {
-    if (!client) return;
-
-    try {
-      // Fetch more transactions since we filter to only incoming deposits
-      const transactions = await client.getTransactionHistory(10);
-
-      if (!Array.isArray(transactions) || transactions.length === 0) {
-        return;
-      }
-
-      // Filter to only show incoming deposits (tag === "receive" or positive amount)
-      // and limit to 3 most recent
-      const incomingTransactions = transactions
-        .filter((tx: UATransaction) => {
-          const amount = tx.change?.amount || "0";
-          return tx.tag === "receive" || amount.startsWith("+");
-        })
-        .slice(0, 3);
-
-      const historyItems: ActivityItem[] = incomingTransactions.map(
-        (tx: UATransaction) => {
-          const amount = tx.change?.amount || "0";
-          // Source chain where deposit was received
-          const chainId = tx.targetToken?.chainId || tx.fromChains?.[0] || 0;
-          // Destination chain where funds were bridged to
-          const destinationChainId = tx.toChains?.[0];
-
-          return {
-            id: `history:${tx.transactionId}`,
-            type: "history" as const,
-            token: tx.targetToken?.symbol?.toUpperCase() || "UNKNOWN",
-            chainId,
-            destinationChainId,
-            amount: amount.replace(/^[+-]/, ""),
-            timestamp: new Date(tx.createdAt).getTime(),
-            amountUSD: Math.abs(parseFloat(tx.change?.amountInUSD || "0")),
-            tokenImage: tx.targetToken?.image,
-            isOutgoing: false,
-          };
-        },
-      );
-
-      // Merge with existing activity, avoiding duplicates
-      setActivity((prev) => {
-        const existingIds = new Set(prev.map((item) => item.id));
-        const newHistoryItems = historyItems.filter(
-          (item) => !existingIds.has(item.id),
-        );
-        // Keep live items at the top, then existing history, then new history
-        const liveItems = prev.filter((item) => item.type !== "history");
-        const existingHistory = prev.filter((item) => item.type === "history");
-
-        // Only add new history items that don't already exist
-        return [...liveItems, ...existingHistory, ...newHistoryItems];
-      });
-    } catch (error) {
-      console.error("[DepositWidget] Failed to fetch transaction history:", error);
-    }
-  }, [client]);
-
-  // Fetch transaction history on mount
-  useEffect(() => {
-    fetchHistory();
-  }, [fetchHistory]);
-
-  // Listen for refund events to update activity and refresh history
-  useEffect(() => {
-    if (!client) return;
-
-    const handleRefundComplete = () => {
-      // Refresh history after successful refund to show the transaction
-      fetchHistory();
-    };
-
-    const handleRefundFailed = (deposit: DetectedDeposit, error: Error) => {
-      // Update activity to show refund failure
-      setActivity((prev) =>
-        prev.map((item) =>
-          item.id === deposit.id
-            ? { ...item, type: "error" as const, message: `Refund failed: ${error.message}` }
-            : item,
-        ),
-      );
-    };
-
-    client.on("refund:complete", handleRefundComplete);
-    client.on("refund:failed", handleRefundFailed);
-
-    return () => {
-      client.off("refund:complete", handleRefundComplete);
-      client.off("refund:failed", handleRefundFailed);
-    };
-  }, [client, fetchHistory]);
 
   const copyAddress = useCallback(async () => {
     if (!depositAddress) return;
@@ -957,10 +983,8 @@ export function DepositWidget({
                           "bg-blue-500/10 border-blue-500/20 text-blue-500",
                         item.type === "error" &&
                           "bg-red-500/10 border-red-500/20 text-red-500",
-                        item.type === "history" &&
-                          (item.isOutgoing
-                            ? "bg-orange-500/10 border-orange-500/20 text-orange-500"
-                            : "bg-green-500/10 border-green-500/20 text-green-500"),
+                        item.type === "below_threshold" &&
+                          "bg-amber-500/10 border-amber-500/20 text-amber-500",
                       )}
                     >
                       {item.type === "complete" && <Check size={14} />}
@@ -969,7 +993,9 @@ export function DepositWidget({
                       )}
                       {item.type === "detected" && <Check size={14} />}
                       {item.type === "error" && <X size={14} />}
-                      {item.type === "history" && <Check size={14} />}
+                      {item.type === "below_threshold" && (
+                        <AlertTriangle size={14} />
+                      )}
                     </div>
                     <div>
                       <h4
@@ -979,16 +1005,18 @@ export function DepositWidget({
                             (theme === "dark"
                               ? "text-[#a1a1aa]"
                               : "text-gray-500"),
+                          item.type === "below_threshold" &&
+                            (theme === "dark"
+                              ? "text-amber-400"
+                              : "text-amber-600"),
                         )}
                       >
                         {item.type === "complete" && `Received ${item.token}`}
                         {item.type === "processing" && "Processing..."}
                         {item.type === "detected" && `Detected ${item.token}`}
                         {item.type === "error" && "Failed"}
-                        {item.type === "history" &&
-                          (item.isOutgoing
-                            ? `Sent ${item.token}`
-                            : `Received ${item.token}`)}
+                        {item.type === "below_threshold" &&
+                          `Below minimum`}
                       </h4>
                       <p
                         className={cn(
@@ -996,36 +1024,37 @@ export function DepositWidget({
                           theme === "dark" ? "text-[#a1a1aa]" : "text-gray-500",
                         )}
                       >
-                        {CHAIN_META[item.chainId]?.name ||
-                          `Chain ${item.chainId}`}
-                        {item.type === "history" &&
-                          item.destinationChainId &&
-                          item.destinationChainId !== item.chainId && (
-                            <>
-                              {" → "}
-                              {CHAIN_META[item.destinationChainId]?.name ||
-                                `Chain ${item.destinationChainId}`}
-                            </>
-                          )}{" "}
-                        • {formatTime(item.timestamp)}
+                        {item.type === "below_threshold"
+                          ? `${item.token} on ${CHAIN_META[item.chainId]?.name || `Chain ${item.chainId}`} • Too small to auto-bridge`
+                          : `${CHAIN_META[item.chainId]?.name || `Chain ${item.chainId}`} • ${formatTime(item.timestamp)}`}
                       </p>
                     </div>
                   </div>
-                  <span
-                    className={cn(
-                      "font-mono text-[13px] font-medium",
-                      item.type === "processing" &&
-                        (theme === "dark" ? "text-[#a1a1aa]" : "text-gray-500"),
-                      item.type === "history" &&
-                        item.isOutgoing &&
-                        "text-orange-500",
-                    )}
-                  >
-                    {item.type === "history" && item.isOutgoing ? "-" : "+"}
-                    {item.type === "history" && item.amountUSD !== undefined
-                      ? `$${item.amountUSD.toFixed(2)}`
-                      : formatAmount(item.amount, item.token, item.chainId)}
-                  </span>
+                  {item.type === "below_threshold" ? (
+                    <button
+                      onClick={() => handleRecover(item)}
+                      className={cn(
+                        "text-[12px] font-medium px-3 py-1 rounded-lg transition-colors",
+                        theme === "dark"
+                          ? "bg-amber-500/15 text-amber-400 hover:bg-amber-500/25"
+                          : "bg-amber-100 text-amber-700 hover:bg-amber-200",
+                      )}
+                    >
+                      Recover
+                    </button>
+                  ) : (
+                    <span
+                      className={cn(
+                        "font-mono text-[13px] font-medium",
+                        item.type === "processing" &&
+                          (theme === "dark"
+                            ? "text-[#a1a1aa]"
+                            : "text-gray-500"),
+                      )}
+                    >
+                      +{formatAmount(item.amount, item.token, item.chainId)}
+                    </span>
+                  )}
                 </div>
               ))
             )}
