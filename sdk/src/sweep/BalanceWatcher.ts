@@ -8,6 +8,7 @@
 import type { UAManager, PrimaryAssetsResponse } from '../universal-account';
 import type { DetectedDeposit, TokenType } from '../core/types';
 import { TypedEventEmitter } from '../core/EventEmitter';
+import { meetsMinimumDeposit } from '../constants/tokens';
 
 export interface BalanceSnapshot {
   balances: Map<string, bigint>;
@@ -159,7 +160,7 @@ export class BalanceWatcher extends TypedEventEmitter<BalanceWatcherEvents> {
         const rawAmount = this.parseBigInt(chain.rawAmount);
         const valueUSD = Number(chain.amountInUSD || 0);
 
-        if (rawAmount > 0n && valueUSD >= this.config.minValueUSD) {
+        if (rawAmount > 0n && meetsMinimumDeposit(rawAmount, tokenType, chainId)) {
           deposits.push({
             id: `${tokenType}:${chainId}:${Date.now()}`,
             token: tokenType.toUpperCase() as TokenType,
@@ -245,21 +246,21 @@ export class BalanceWatcher extends TypedEventEmitter<BalanceWatcherEvents> {
       
       console.log(`[BalanceWatcher] Checking ${key}: amount=${amount}, valueUSD=${valueUSD}`);
 
-      if (amount > 0n && valueUSD >= this.config.minValueUSD) {
+      const [tokenType, chainIdStr] = key.split(':');
+      const chainId = Number(chainIdStr);
+
+      if (!this.config.supportedTokens.includes(tokenType.toUpperCase())) {
+        console.log(`[BalanceWatcher] ${tokenType} not in supported tokens`);
+        continue;
+      }
+      if (!this.config.supportedChains.includes(chainId)) {
+        console.log(`[BalanceWatcher] Chain ${chainId} not in supported chains`);
+        continue;
+      }
+
+      if (amount > 0n && meetsMinimumDeposit(amount, tokenType, chainId)) {
         if (this.processingKeys.has(key)) {
           console.log(`[BalanceWatcher] ${key} already processing, skipping`);
-          continue;
-        }
-
-        const [tokenType, chainIdStr] = key.split(':');
-        const chainId = Number(chainIdStr);
-
-        if (!this.config.supportedTokens.includes(tokenType.toUpperCase())) {
-          console.log(`[BalanceWatcher] ${tokenType} not in supported tokens`);
-          continue;
-        }
-        if (!this.config.supportedChains.includes(chainId)) {
-          console.log(`[BalanceWatcher] Chain ${chainId} not in supported chains`);
           continue;
         }
 
@@ -275,14 +276,8 @@ export class BalanceWatcher extends TypedEventEmitter<BalanceWatcherEvents> {
           rawAmount: amount,
           detectedAt: Date.now(),
         });
-      } else if (amount > 0n && valueUSD > 0 && valueUSD < this.config.minValueUSD) {
+      } else if (amount > 0n && !meetsMinimumDeposit(amount, tokenType, chainId)) {
         if (this.belowThresholdKeys.has(key)) continue;
-
-        const [tokenType, chainIdStr] = key.split(':');
-        const chainId = Number(chainIdStr);
-
-        if (!this.config.supportedTokens.includes(tokenType.toUpperCase())) continue;
-        if (!this.config.supportedChains.includes(chainId)) continue;
 
         console.log(`[BalanceWatcher] Below-threshold deposit: ${tokenType} on chain ${chainId} ($${valueUSD.toFixed(2)})`);
 
@@ -343,16 +338,18 @@ export class BalanceWatcher extends TypedEventEmitter<BalanceWatcherEvents> {
       const prevAmount = prev.balances.get(key) || 0n;
       const valueUSD = current.usdValues.get(key) || 0;
 
-      // Only detect increases above minimum value
-      if (currentAmount > prevAmount && valueUSD >= this.config.minValueUSD) {
-        const [tokenType, chainIdStr] = key.split(':');
-        const chainId = Number(chainIdStr);
+      if (currentAmount <= prevAmount) continue;
 
-        if (!this.config.supportedTokens.includes(tokenType.toUpperCase())) continue;
-        if (!this.config.supportedChains.includes(chainId)) continue;
+      const [tokenType, chainIdStr] = key.split(':');
+      const chainId = Number(chainIdStr);
 
-        const deltaAmount = currentAmount - prevAmount;
+      if (!this.config.supportedTokens.includes(tokenType.toUpperCase())) continue;
+      if (!this.config.supportedChains.includes(chainId)) continue;
 
+      const deltaAmount = currentAmount - prevAmount;
+
+      // Only detect increases above per-token minimum
+      if (meetsMinimumDeposit(deltaAmount, tokenType, chainId)) {
         console.log(`[BalanceWatcher] Detected deposit: ${tokenType} on chain ${chainId}, delta: ${deltaAmount}`);
 
         deposits.push({
@@ -364,16 +361,8 @@ export class BalanceWatcher extends TypedEventEmitter<BalanceWatcherEvents> {
           rawAmount: deltaAmount,
           detectedAt: Date.now(),
         });
-      } else if (currentAmount > prevAmount && valueUSD > 0 && valueUSD < this.config.minValueUSD) {
+      } else {
         if (this.belowThresholdKeys.has(key)) continue;
-
-        const [tokenType, chainIdStr] = key.split(':');
-        const chainId = Number(chainIdStr);
-
-        if (!this.config.supportedTokens.includes(tokenType.toUpperCase())) continue;
-        if (!this.config.supportedChains.includes(chainId)) continue;
-
-        const deltaAmount = currentAmount - prevAmount;
 
         console.log(`[BalanceWatcher] Below-threshold deposit: ${tokenType} on chain ${chainId}, delta: ${deltaAmount}`);
 

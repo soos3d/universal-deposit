@@ -1,16 +1,22 @@
 /**
  * Sweeper - Handles sweeping deposits to destination address
- * 
- * Implements multi-strategy sweep logic with fallback options:
- * 1. Try to sweep to destination chain (e.g., Arbitrum)
- * 2. Fall back to source chain if cross-chain fails
- * 3. Try different percentages (100%, 95%, 50%) to handle gas
+ *
+ * Uses createUniversalTransaction to convert any deposited token into USDC
+ * and send it to the configured destination chain + address.
+ *
+ * Fallback order:
+ * 1. USDC on destination chain via createUniversalTransaction
+ * 2. USDC.e on destination chain via createUniversalTransaction
+ * 3. Same-token transfer on source chain via createTransferTransaction
+ *
+ * Each target is attempted at 100%, 95%, 50% amounts to handle gas.
  */
 
 import type { UAManager } from '../universal-account';
 import type { DetectedDeposit, SweepResult, AuthCoreProvider, TokenType } from '../core/types';
 import { SweepError } from '../core/errors';
 import { TOKEN_ADDRESSES, CHAIN, getTokenDecimals } from '../constants';
+import { encodeERC20Transfer, toSmallestUnit } from './erc20';
 
 export interface SweeperConfig {
   uaManager: UAManager;
@@ -25,7 +31,17 @@ export interface SweepAttempt {
   chainId: number;
   tokenAddress?: string;
   label: string;
+  /** When true, use createUniversalTransaction (any token -> USDC) */
+  isUniversalTx: boolean;
+  /** When set, use USD value for USDC amount (cross-token conversion) */
+  targetAmountUSD?: number;
 }
+
+/** USDC has 6 decimals on all chains we target */
+const USDC_DECIMALS = 6;
+
+/** Matches SUPPORTED_TOKEN_TYPE.USDC from the UA SDK — inlined to avoid TS resolution issues */
+const UA_TOKEN_USDC = 'usdc';
 
 export class Sweeper {
   private config: SweeperConfig;
@@ -76,21 +92,18 @@ export class Sweeper {
    * Execute the sweep with multi-strategy fallback
    */
   private async executeSweep(deposit: DetectedDeposit): Promise<SweepResult> {
-    const ua = this.config.uaManager.getUniversalAccount();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ua = this.config.uaManager.getUniversalAccount() as any;
     const targetChainId = this.config.destination.chainId;
     const receiver = this.config.destination.address;
 
-    // Percentages to try (100% first, then reduce for gas)
     const percentages = [100n, 95n, 50n];
 
-    // Build list of sweep targets
     const targets = this.buildSweepTargets(deposit, targetChainId);
 
     if (targets.length === 0) {
       throw new SweepError(`No sweep targets available for ${deposit.token}`);
     }
-
-    const rawAmount = deposit.rawAmount;
 
     if (!this.config.authCoreProvider) {
       throw new SweepError('authCoreProvider is required for sweep operations');
@@ -98,32 +111,20 @@ export class Sweeper {
 
     for (const target of targets) {
       for (const pct of percentages) {
-        // For source chain fallback, always use 100%
+        // For source-chain fallback, always use 100%
         const safePct = target.chainId === deposit.chainId ? 100n : pct;
-        const tryAmount = (rawAmount * safePct) / 100n;
 
-        // Skip if amount too small
-        if (tryAmount < 1000n) continue;
+        const amountHuman = this.computeAmount(deposit, target, safePct);
+        if (amountHuman === null) continue;
 
         try {
           console.log(`[Sweeper] Attempting: ${target.label} (${safePct}%)`);
 
-          // Format amount for SDK (human-readable)
-          const decimals = this.getDecimals(deposit.token, deposit.chainId);
-          const amountHuman = this.formatAmount(tryAmount, decimals);
+          const tx = target.isUniversalTx
+            ? await this.buildUniversalTransaction(ua, target.chainId, target.tokenAddress!, amountHuman, receiver)
+            : await this.buildTransferTransaction(ua, deposit.token, target.chainId, target.tokenAddress, amountHuman, receiver);
 
-          // Build transaction
-          const tx = await this.buildTransaction(
-            ua,
-            deposit.token,
-            target.chainId,
-            target.tokenAddress,
-            amountHuman,
-            receiver
-          );
-
-          // Sign using Auth Core provider - if signing fails, abort all attempts
-          // (signing failure = Auth Core issue, not a transaction issue)
+          // Sign — if signing fails, abort all attempts (Auth Core issue)
           let signature: string;
           try {
             signature = await this.config.authCoreProvider.signMessage(tx.rootHash);
@@ -135,9 +136,7 @@ export class Sweeper {
             throw err;
           }
 
-          // Send transaction - if this fails, try next target/percentage
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (ua as any).sendTransaction(tx, signature);
+          await ua.sendTransaction(tx, signature);
 
           console.log(`[Sweeper] Success! Swept to ${target.label}`);
 
@@ -148,18 +147,40 @@ export class Sweeper {
             status: 'success',
           };
         } catch (error) {
-          // If this is a signing error, stop all attempts immediately
           if (error instanceof SweepError && error.code === 'SIGNING_FAILED') {
             throw error;
           }
           console.warn(`[Sweeper] Failed attempt (${target.label}, ${safePct}%):`, error);
-          // Transaction error - continue to next attempt
         }
       }
     }
 
-    // All attempts failed
     throw new SweepError('All sweep strategies failed');
+  }
+
+  /**
+   * Compute the human-readable amount string for a sweep attempt.
+   * Returns null when the resulting amount is too small.
+   */
+  private computeAmount(
+    deposit: DetectedDeposit,
+    target: SweepAttempt,
+    pct: bigint
+  ): string | null {
+    if (target.isUniversalTx) {
+      // Universal tx: amount is always in USDC terms
+      const baseUSD = target.targetAmountUSD ?? deposit.amountUSD ?? 0;
+      if (baseUSD <= 0) return null;
+      const scaledUSD = baseUSD * Number(pct) / 100;
+      if (scaledUSD < 0.001) return null;
+      return scaledUSD.toFixed(USDC_DECIMALS);
+    }
+
+    // Fallback same-token transfer: use raw deposit amount
+    const tryAmount = (deposit.rawAmount * pct) / 100n;
+    if (tryAmount < 1000n) return null;
+    const decimals = getTokenDecimals(deposit.token, deposit.chainId);
+    return this.formatAmount(tryAmount, decimals);
   }
 
   /**
@@ -173,48 +194,45 @@ export class Sweeper {
     const destConfig = TOKEN_ADDRESSES[targetChainId] || {};
     const sourceConfig = TOKEN_ADDRESSES[sourceChainId] || {};
 
-    // 1. Primary target: Native asset on destination chain
-    if (token === 'eth') {
-      targets.push({
-        chainId: targetChainId,
-        tokenAddress: undefined,
-        label: `${this.getChainName(targetChainId)} ETH`,
-      });
-    } else if (token === 'usdc' && destConfig.usdc) {
+    const isUsdcDeposit = token === 'usdc';
+
+    // 1. Primary: USDC on destination chain via createUniversalTransaction
+    if (destConfig.usdc) {
       targets.push({
         chainId: targetChainId,
         tokenAddress: destConfig.usdc,
-        label: `${this.getChainName(targetChainId)} Native USDC`,
-      });
-    } else if (token === 'usdt' && destConfig.usdt) {
-      targets.push({
-        chainId: targetChainId,
-        tokenAddress: destConfig.usdt,
-        label: `${this.getChainName(targetChainId)} USDT`,
+        label: `${this.getChainName(targetChainId)} USDC`,
+        isUniversalTx: true,
+        targetAmountUSD: isUsdcDeposit ? undefined : deposit.amountUSD,
       });
     }
 
-    // 2. Secondary target: Bridged asset (e.g., USDC.e) on destination
-    if (token === 'usdc' && destConfig.usdc_e) {
+    // 2. Secondary: USDC.e (bridged) on destination
+    if (destConfig.usdc_e) {
       targets.push({
         chainId: targetChainId,
         tokenAddress: destConfig.usdc_e,
-        label: `${this.getChainName(targetChainId)} Bridged USDC.e`,
+        label: `${this.getChainName(targetChainId)} USDC.e`,
+        isUniversalTx: true,
+        targetAmountUSD: isUsdcDeposit ? undefined : deposit.amountUSD,
       });
     }
 
-    // 3. Fallback: Source chain (same chain transfer)
-    if (token === 'eth') {
+    // 3. Fallback: same-chain same-token transfer via createTransferTransaction
+    const nativeEvmTokens = ['eth', 'bnb'];
+    if (nativeEvmTokens.includes(token)) {
       targets.push({
         chainId: sourceChainId,
         tokenAddress: undefined,
         label: `${this.getChainName(sourceChainId)} Fallback`,
+        isUniversalTx: false,
       });
     } else if (sourceConfig[token]) {
       targets.push({
         chainId: sourceChainId,
         tokenAddress: sourceConfig[token],
         label: `${this.getChainName(sourceChainId)} Fallback`,
+        isUniversalTx: false,
       });
     }
 
@@ -222,9 +240,41 @@ export class Sweeper {
   }
 
   /**
-   * Build a transfer transaction
+   * Build a universal transaction that converts any token -> USDC and
+   * sends it via an ERC20 transfer call to the receiver.
    */
-  private async buildTransaction(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async buildUniversalTransaction(
+    ua: any,
+    chainId: number,
+    usdcAddress: string,
+    amountHuman: string,
+    receiver: string
+  ): Promise<any> {
+    const amountSmallest = toSmallestUnit(amountHuman, USDC_DECIMALS);
+
+    return await ua.createUniversalTransaction({
+      chainId,
+      expectTokens: [
+        {
+          type: UA_TOKEN_USDC,
+          amount: amountHuman,
+        },
+      ],
+      transactions: [
+        {
+          to: usdcAddress,
+          data: encodeERC20Transfer(receiver, amountSmallest),
+        },
+      ],
+    });
+  }
+
+  /**
+   * Build a simple same-token transfer (fallback for source-chain transfers)
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async buildTransferTransaction(
     ua: any,
     _token: TokenType,
     chainId: number,
@@ -244,19 +294,10 @@ export class Sweeper {
   }
 
   /**
-   * Get decimals for a token on a specific chain
-   */
-  private getDecimals(token: TokenType, chainId: number): number {
-    return getTokenDecimals(token, chainId);
-  }
-
-  /**
-   * Format amount from wei to human-readable
+   * Format amount from smallest-unit bigint to human-readable string
    */
   private formatAmount(amount: bigint, decimals: number): string {
-    // Ensure decimals is a number
     const dec = Number(decimals);
-    // Avoid ** operator which gets transpiled to Math.pow
     let divisor = 1n;
     for (let i = 0; i < dec; i++) {
       divisor = divisor * 10n;

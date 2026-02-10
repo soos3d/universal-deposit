@@ -13,8 +13,7 @@ import type {
   DestinationConfig,
 } from "../../core/types";
 import { CHAIN_META, getChainName } from "../../constants/chains";
-import { getTokenDecimals } from "../../constants/tokens";
-import { DEFAULT_MIN_VALUE_USD } from "../../constants";
+import { getTokenDecimals, getMinDepositAmount } from "../../constants/tokens";
 import { useDepositContext } from "../context/DepositContext";
 import type { ActivityItem } from "../types";
 import {
@@ -114,7 +113,6 @@ export function DepositWidget({
   const [copied, setCopied] = useState(false);
   const [depositAddress, setDepositAddress] = useState<string>("");
   const autoSweep = client?.getConfig().autoSweep ?? true;
-  const minValueUSD = client?.getConfig().minValueUSD ?? DEFAULT_MIN_VALUE_USD;
 
   // Get deposit address based on selected chain
   useEffect(() => {
@@ -788,7 +786,7 @@ export function DepositWidget({
                   result in permanent loss.
                 </p>
                 <p className="mt-1">
-                  Minimum deposit: <strong>${minValueUSD.toFixed(2)}</strong>
+                  Minimum deposit: <strong>{getMinDepositAmount(selectedToken)} {selectedToken}</strong>
                 </p>
               </div>
             </div>

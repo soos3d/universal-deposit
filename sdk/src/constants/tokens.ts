@@ -116,3 +116,43 @@ export function getTokenDecimals(token: string, chainId?: number): number {
 }
 
 export const DEFAULT_SUPPORTED_TOKENS = ['ETH', 'USDC', 'USDT', 'BTC', 'SOL', 'BNB'] as const;
+
+/**
+ * Per-token minimum deposit amounts in native units.
+ * These replace the USD-based threshold to avoid reliance on API price data.
+ */
+export const MIN_DEPOSIT_AMOUNTS: Record<string, number> = {
+  USDC: 0.2,
+  USDT: 0.2,
+  ETH: 0.0004,
+  BNB: 0.0003,
+  SOL: 0.006,
+  BTC: 0.000005,
+};
+
+/**
+ * Get the minimum deposit amount for a token in native units.
+ *
+ * @param token - Token symbol (e.g., 'USDC', 'ETH')
+ * @returns Minimum amount in native units, or 0 if unknown
+ */
+export function getMinDepositAmount(token: string): number {
+  return MIN_DEPOSIT_AMOUNTS[token.toUpperCase()] ?? 0;
+}
+
+/**
+ * Check whether a raw on-chain amount meets the minimum deposit threshold.
+ *
+ * @param rawAmount - On-chain amount as bigint (smallest unit)
+ * @param token - Token symbol (e.g., 'USDC', 'ETH')
+ * @param chainId - Optional chain ID for chain-specific decimal lookup
+ * @returns true if the amount meets or exceeds the minimum
+ */
+export function meetsMinimumDeposit(rawAmount: bigint, token: string, chainId?: number): boolean {
+  const min = getMinDepositAmount(token);
+  if (min === 0) return rawAmount > 0n;
+
+  const decimals = getTokenDecimals(token, chainId);
+  const amount = Number(rawAmount) / 10 ** decimals;
+  return amount >= min;
+}
