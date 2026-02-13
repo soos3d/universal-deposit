@@ -8,15 +8,18 @@
  * 1. USDC on destination chain via createUniversalTransaction
  * 2. USDC.e on destination chain via createUniversalTransaction
  *
- * Each target is attempted at 100%, 95%, 50% amounts to handle gas.
- * If all targets fail, the sweep fails (no source-chain fallback).
+ * Strategy: "low probe + fixed LP buffer"
+ * 1. Probe at $0.01 USDC to extract gas fee (fixed cost)
+ * 2. Calculate optimal = (deposit - gasFee) / (1 + LP_FEE_BUFFER)
+ * 3. Execute with optimal amount, retry at 90% if first attempt fails
  */
 
 import type { UAManager } from '../universal-account';
 import type { DetectedDeposit, SweepResult, AuthCoreProvider } from '../core/types';
 import { SweepError } from '../core/errors';
-import { TOKEN_ADDRESSES, CHAIN } from '../constants';
+import { TOKEN_ADDRESSES, CHAIN, getChainName } from '../constants';
 import { encodeERC20Transfer, toSmallestUnit } from './erc20';
+import { extractFeeBreakdown, calculateOptimalAmount } from './fee-math';
 
 export interface SweeperConfig {
   uaManager: UAManager;
@@ -42,6 +45,40 @@ const USDC_DECIMALS = 6;
 
 /** Matches SUPPORTED_TOKEN_TYPE.USDC from the UA SDK — inlined to avoid TS resolution issues */
 const UA_TOKEN_USDC = 'usdc';
+
+/** Retry multiplier when probe-calculated optimal fails */
+const PROBE_RETRY_FACTOR = 0.90;
+
+/** Low probe amount ($0.01 USDC) — always succeeds since any deposit covers it */
+const PROBE_AMOUNT = '0.010000';
+
+/** Errors that must always propagate (never retry) */
+function isAbortError(error: unknown): boolean {
+  return error instanceof SweepError &&
+    (error.code === 'SIGNING_FAILED' || error.code === 'SEND_FAILED');
+}
+
+/**
+ * Extract a readable message from any thrown value.
+ * The UA SDK throws non-standard objects (e.g. `{ Da: "Insufficient balance..." }`)
+ * that are NOT `Error` instances. Using `error instanceof Error ? error.message : ''`
+ * would silently swallow these — this helper always produces a useful string.
+ */
+function formatError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  if (error !== null && typeof error === 'object') {
+    // Handle UA SDK's non-standard error objects
+    const obj = error as Record<string, unknown>;
+    if (typeof obj.message === 'string') return obj.message;
+    // Some SDK errors have a Da/Oa/etc prefix key with the real message
+    const keys = Object.keys(obj);
+    if (keys.length > 0 && typeof obj[keys[0]] === 'string') {
+      return `${keys[0]}: ${obj[keys[0]]}`;
+    }
+  }
+  return String(error);
+}
 
 export class Sweeper {
   private config: SweeperConfig;
@@ -89,70 +126,33 @@ export class Sweeper {
   }
 
   /**
-   * Execute the sweep with multi-strategy fallback
+   * Execute sweep: iterate targets and probe fees for each.
    */
   private async executeSweep(deposit: DetectedDeposit): Promise<SweepResult> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ua = this.config.uaManager.getUniversalAccount() as any;
-    // Read destination at sweep time (not construction time) so runtime
-    // changes are always reflected, even if the sweep was queued earlier.
     const { chainId: targetChainId, address: receiver } = this.config.getDestination();
 
-    console.log(`[Sweeper] Destination: ${this.getChainName(targetChainId)} (${targetChainId}) -> ${receiver}`);
+    console.log(`[Sweeper] Destination: ${getChainName(targetChainId)} (${targetChainId}) -> ${receiver}`);
     console.log(`[Sweeper] Deposit: ${deposit.token} on chain ${deposit.chainId}, $${deposit.amountUSD?.toFixed(2) ?? '?'}`);
 
-    const percentages = [100n, 95n, 50n];
-
     const targets = this.buildSweepTargets(deposit, targetChainId);
-
-    console.log(`[Sweeper] Targets (${targets.length}):`, targets.map(t => t.label));
 
     if (targets.length === 0) {
       throw new SweepError(`No sweep targets available for ${deposit.token} on destination chain ${targetChainId}`);
     }
-
     if (!this.config.authCoreProvider) {
       throw new SweepError('authCoreProvider is required for sweep operations');
     }
 
     for (const target of targets) {
-      for (const pct of percentages) {
-        const amountHuman = this.computeAmount(deposit, target, pct);
-        if (amountHuman === null) continue;
-
-        try {
-          console.log(`[Sweeper] Attempting: ${target.label} (${pct}%) -> chain ${target.chainId}`);
-
-          const tx = await this.buildUniversalTransaction(ua, target.chainId, target.tokenAddress!, amountHuman, receiver);
-
-          // Sign — if signing fails, abort all attempts (Auth Core issue)
-          let signature: string;
-          try {
-            signature = await this.config.authCoreProvider.signMessage(tx.rootHash);
-          } catch (signError) {
-            const err = new SweepError(
-              `Signing failed: ${signError instanceof Error ? signError.message : 'Unknown signing error'}`
-            );
-            err.code = 'SIGNING_FAILED';
-            throw err;
-          }
-
-          await ua.sendTransaction(tx, signature);
-
-          console.log(`[Sweeper] Success! Swept to ${target.label}`);
-
-          return {
-            depositId: deposit.id,
-            transactionId: tx.rootHash || `sweep-${Date.now()}`,
-            explorerUrl: this.getExplorerUrl(target.chainId, tx.rootHash),
-            status: 'success',
-          };
-        } catch (error) {
-          if (error instanceof SweepError && error.code === 'SIGNING_FAILED') {
-            throw error;
-          }
-          console.warn(`[Sweeper] Failed attempt (${target.label}, ${pct}%):`, error);
-        }
+      try {
+        const result = await this.probeFeesAndExecute(ua, deposit, target, receiver);
+        if (result) return result;
+        console.log(`[Sweeper] Target ${target.label} returned null (fees too high), trying next`);
+      } catch (error) {
+        if (isAbortError(error)) throw error;
+        console.warn(`[Sweeper] Target ${target.label} failed:`, formatError(error));
       }
     }
 
@@ -160,20 +160,150 @@ export class Sweeper {
   }
 
   /**
-   * Compute the human-readable amount string for a sweep attempt.
-   * Returns null when the resulting amount is too small.
+   * Probe at $0.01 to extract gas fee, calculate optimal amount, execute.
+   * Returns null if this target can't work (fees too high for deposit).
    */
-  private computeAmount(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async probeFeesAndExecute(
+    ua: any,
     deposit: DetectedDeposit,
     target: SweepAttempt,
-    pct: bigint
-  ): string | null {
-    // Amount is always in USDC terms for universal transactions
+    receiver: string
+  ): Promise<SweepResult | null> {
     const baseUSD = target.targetAmountUSD ?? deposit.amountUSD ?? 0;
     if (baseUSD <= 0) return null;
-    const scaledUSD = baseUSD * Number(pct) / 100;
-    if (scaledUSD < 0.001) return null;
-    return scaledUSD.toFixed(USDC_DECIMALS);
+    if (!target.tokenAddress) return null;
+
+    // Step 1: Probe at $0.01 to extract gas fee (fixed cost, doesn't scale with amount)
+    console.log(`[Sweeper] Step 1: Probing fees at $${PROBE_AMOUNT} for ${target.label} -> chain ${target.chainId}`);
+    console.log(`[Sweeper]   deposit=$${baseUSD.toFixed(2)}, token=${target.tokenAddress}`);
+
+    let probeTx;
+    try {
+      probeTx = await this.buildUniversalTransaction(
+        ua, target.chainId, target.tokenAddress, PROBE_AMOUNT, receiver
+      );
+    } catch (probeError) {
+      console.warn(`[Sweeper] Probe at $${PROBE_AMOUNT} FAILED:`, formatError(probeError));
+      throw probeError;
+    }
+
+    const fees = extractFeeBreakdown(probeTx);
+    console.log(`[Sweeper] Step 2: Fee extraction result:`, fees === null
+      ? 'no fee data in response'
+      : `gas=$${fees.gasFeeUSD.toFixed(6)} lp=$${fees.lpFeeUSD.toFixed(6)} total=$${fees.totalFeeUSD.toFixed(6)} freeGas=${fees.freeGasFee} freeService=${fees.freeServiceFee}`
+    );
+
+    // If no fee data or gasless, send at 100%
+    if (fees === null || fees.totalFeeUSD === 0) {
+      console.log(`[Sweeper] ${fees === null ? 'No fee data' : 'Gasless'} -> rebuilding at 100% ($${baseUSD.toFixed(USDC_DECIMALS)})`);
+      const fullAmount = baseUSD.toFixed(USDC_DECIMALS);
+      const fullTx = await this.buildUniversalTransaction(
+        ua, target.chainId, target.tokenAddress, fullAmount, receiver
+      );
+      return await this.signAndSend(ua, fullTx, deposit, target);
+    }
+
+    // Step 3: Calculate optimal amount using gas fee + fixed LP buffer (1.1%)
+    const optimalUSD = calculateOptimalAmount(baseUSD, fees.gasFeeUSD);
+    if (optimalUSD === null) {
+      console.log(`[Sweeper] Step 3: Deposit ($${baseUSD.toFixed(2)}) can't cover gas ($${fees.gasFeeUSD.toFixed(4)}) -> skipping target`);
+      return null;
+    }
+
+    const efficiency = ((optimalUSD / baseUSD) * 100).toFixed(1);
+    console.log(`[Sweeper] Step 3: Optimal=$${optimalUSD.toFixed(USDC_DECIMALS)} (${efficiency}% of $${baseUSD.toFixed(2)}, gas=$${fees.gasFeeUSD.toFixed(4)})`);
+
+    // Step 4: Execute with optimal amount (retries at 90% internally)
+    return await this.executeOptimal(ua, deposit, target, receiver, optimalUSD);
+  }
+
+  /**
+   * Build a transaction at the optimal USD amount, sign and send.
+   * Retries at 90% of optimal if the first attempt fails.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async executeOptimal(
+    ua: any,
+    deposit: DetectedDeposit,
+    target: SweepAttempt,
+    receiver: string,
+    optimalUSD: number
+  ): Promise<SweepResult> {
+    const tokenAddr = target.tokenAddress!; // Caller guards with if (!target.tokenAddress)
+    const optimalHuman = optimalUSD.toFixed(USDC_DECIMALS);
+    console.log(`[Sweeper] Step 4a: Building tx at optimal $${optimalHuman}`);
+    try {
+      const optimalTx = await this.buildUniversalTransaction(
+        ua, target.chainId, tokenAddr, optimalHuman, receiver
+      );
+      return await this.signAndSend(ua, optimalTx, deposit, target);
+    } catch (executeError) {
+      if (isAbortError(executeError)) throw executeError;
+
+      // Retry at 90% of optimal
+      const retryUSD = optimalUSD * PROBE_RETRY_FACTOR;
+      console.warn(`[Sweeper] Step 4a FAILED: ${formatError(executeError)}`);
+      console.log(`[Sweeper] Step 4b: Retrying at ${PROBE_RETRY_FACTOR * 100}% -> $${retryUSD.toFixed(USDC_DECIMALS)}`);
+      if (retryUSD < 0.01) {
+        console.log(`[Sweeper] Retry amount $${retryUSD.toFixed(USDC_DECIMALS)} below dust, giving up`);
+        throw executeError;
+      }
+
+      const retryHuman = retryUSD.toFixed(USDC_DECIMALS);
+      const retryTx = await this.buildUniversalTransaction(
+        ua, target.chainId, tokenAddr, retryHuman, receiver
+      );
+      return await this.signAndSend(ua, retryTx, deposit, target);
+    }
+  }
+
+  /**
+   * Sign a transaction and send it.
+   * Throws with code SIGNING_FAILED on sign errors (always abort).
+   * Throws with code SEND_FAILED on send errors after signing (never retry — potential double-spend).
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async signAndSend(ua: any, tx: any, deposit: DetectedDeposit, target: SweepAttempt): Promise<SweepResult> {
+    if (!this.config.authCoreProvider) {
+      throw new SweepError('authCoreProvider is required for signing');
+    }
+
+    let signature: string;
+    try {
+      signature = await this.config.authCoreProvider.signMessage(tx.rootHash);
+    } catch (signError) {
+      const err = new SweepError(
+        `Signing failed: ${signError instanceof Error ? signError.message : 'Unknown signing error'}`,
+        deposit.id,
+        signError
+      );
+      err.code = 'SIGNING_FAILED';
+      throw err;
+    }
+
+    try {
+      await ua.sendTransaction(tx, signature);
+    } catch (sendError) {
+      // After signing, a send failure is ambiguous — the tx may have been submitted.
+      // Mark as SEND_FAILED so callers do NOT retry (potential double-spend).
+      const err = new SweepError(
+        `Send failed after signing: ${sendError instanceof Error ? sendError.message : 'Unknown send error'}`,
+        deposit.id,
+        sendError
+      );
+      err.code = 'SEND_FAILED';
+      throw err;
+    }
+
+    console.log(`[Sweeper] Success! Swept to ${target.label}`);
+
+    return {
+      depositId: deposit.id,
+      transactionId: tx.rootHash || `sweep-${Date.now()}`,
+      explorerUrl: this.getExplorerUrl(target.chainId, tx.rootHash),
+      status: 'success',
+    };
   }
 
   /**
@@ -192,7 +322,7 @@ export class Sweeper {
       targets.push({
         chainId: targetChainId,
         tokenAddress: destConfig.usdc,
-        label: `${this.getChainName(targetChainId)} USDC`,
+        label: `${getChainName(targetChainId)} USDC`,
         isUniversalTx: true,
         targetAmountUSD: isUsdcDeposit ? undefined : deposit.amountUSD,
       });
@@ -203,7 +333,7 @@ export class Sweeper {
       targets.push({
         chainId: targetChainId,
         tokenAddress: destConfig.usdc_e,
-        label: `${this.getChainName(targetChainId)} USDC.e`,
+        label: `${getChainName(targetChainId)} USDC.e`,
         isUniversalTx: true,
         targetAmountUSD: isUsdcDeposit ? undefined : deposit.amountUSD,
       });
@@ -245,21 +375,6 @@ export class Sweeper {
         },
       ],
     });
-  }
-
-  /**
-   * Get chain name for logging
-   */
-  private getChainName(chainId: number): string {
-    const names: Record<number, string> = {
-      [CHAIN.ETHEREUM]: 'Ethereum',
-      [CHAIN.ARBITRUM]: 'Arbitrum',
-      [CHAIN.BASE]: 'Base',
-      [CHAIN.POLYGON]: 'Polygon',
-      [CHAIN.BNB]: 'BNB Chain',
-      [CHAIN.SOLANA]: 'Solana',
-    };
-    return names[chainId] || `Chain ${chainId}`;
   }
 
   /**

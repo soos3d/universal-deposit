@@ -1624,7 +1624,7 @@
   dependencies:
     "@particle-network/auth-core" "^2.1.1"
     "@particle-network/auth-core-modal" "^1.5.2"
-    "@particle-network/universal-account-sdk" "^1.0.25"
+    "@particle-network/universal-account-sdk" "^1.0.26"
     clsx "^2.1.1"
     lucide-react "^0.562.0"
     qrcode.react "^4.2.0"
@@ -1640,10 +1640,10 @@
     buffer "^6.0.3"
     elliptic "^6.5.4"
 
-"@particle-network/universal-account-sdk@^1.0.25":
-  version "1.0.25"
-  resolved "https://registry.npmjs.org/@particle-network/universal-account-sdk/-/universal-account-sdk-1.0.25.tgz"
-  integrity sha512-YV2pzyScm1jwwQUp5om3lJx0NvDRKcDy/MKpLpFvQgJZoklblgoA9ML9lCsORwFCJ8U4fgM5c/fLzR5HJ8qsFA==
+"@particle-network/universal-account-sdk@^1.0.26":
+  version "1.0.26"
+  resolved "https://registry.yarnpkg.com/@particle-network/universal-account-sdk/-/universal-account-sdk-1.0.26.tgz#e843818f6af07a6474c7f88ab05d840d975dd92e"
+  integrity sha512-L4bz6cccnAMaEQUd5oY74mLM2Q61Ssjzo9y8nYDlbqjm0r8K9jM4zCGPj+RgbKc4oEAl6as/6byyMXRAjTMx3A==
   dependencies:
     "@coral-xyz/anchor" "^0.30.1"
     "@noble/hashes" "^1.7.1"

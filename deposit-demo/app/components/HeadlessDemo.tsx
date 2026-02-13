@@ -1,13 +1,20 @@
 "use client";
 
-import { useDeposit, CHAIN, getChainName } from "@particle-network/deposit-sdk/react";
+import {
+  useDeposit,
+  CHAIN,
+  getChainName,
+} from "@particle-network/deposit-sdk/react";
 
 interface HeadlessDemoProps {
   ownerAddress: string;
   selectedChainId: number;
 }
 
-export function HeadlessDemo({ ownerAddress, selectedChainId }: HeadlessDemoProps) {
+export function HeadlessDemo({
+  ownerAddress,
+  selectedChainId,
+}: HeadlessDemoProps) {
   const {
     isReady,
     isConnecting,
@@ -60,23 +67,33 @@ export function HeadlessDemo({ ownerAddress, selectedChainId }: HeadlessDemoProp
       <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className={`w-2 h-2 rounded-full ${
-              status === "watching" ? "bg-green-500 animate-pulse" :
-              status === "sweeping" ? "bg-yellow-500 animate-pulse" :
-              status === "ready" ? "bg-blue-500" :
-              "bg-zinc-500"
-            }`} />
-            <span className="text-sm font-medium text-white capitalize">{status}</span>
+            <div
+              className={`w-2 h-2 rounded-full ${
+                status === "watching"
+                  ? "bg-green-500 animate-pulse"
+                  : status === "sweeping"
+                    ? "bg-yellow-500 animate-pulse"
+                    : status === "ready"
+                      ? "bg-blue-500"
+                      : "bg-zinc-500"
+              }`}
+            />
+            <span className="text-sm font-medium text-white capitalize">
+              {status}
+            </span>
           </div>
           <div className="text-xs text-zinc-500">
-            Destination: {getChainName(currentDestination?.chainId || CHAIN.ARBITRUM)}
+            Destination:{" "}
+            {getChainName(currentDestination?.chainId || CHAIN.ARBITRUM)}
           </div>
         </div>
       </div>
 
       {/* Deposit Addresses */}
       <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4">
-        <h3 className="text-sm font-semibold text-white mb-3">Deposit Addresses</h3>
+        <h3 className="text-sm font-semibold text-white mb-3">
+          Deposit Addresses
+        </h3>
         <div className="space-y-3">
           <AddressRow label="EVM" address={depositAddresses?.evm} />
           <AddressRow label="Solana" address={depositAddresses?.solana} />
@@ -106,13 +123,17 @@ export function HeadlessDemo({ ownerAddress, selectedChainId }: HeadlessDemoProp
                 className="flex items-center justify-between p-3 bg-zinc-800 rounded-lg"
               >
                 <div>
-                  <span className="text-white font-medium">{deposit.token}</span>
+                  <span className="text-white font-medium">
+                    {deposit.token}
+                  </span>
                   <span className="text-zinc-400 text-sm ml-2">
                     on {getChainName(deposit.chainId)}
                   </span>
                 </div>
                 <div className="text-right">
-                  <p className="text-white font-medium">${deposit.amountUSD.toFixed(2)}</p>
+                  <p className="text-white font-medium">
+                    ${deposit.amountUSD.toFixed(2)}
+                  </p>
                   <button
                     onClick={() => sweep(deposit.id)}
                     className="text-xs text-blue-400 hover:text-blue-300"
@@ -128,7 +149,9 @@ export function HeadlessDemo({ ownerAddress, selectedChainId }: HeadlessDemoProp
 
       {/* Recent Activity */}
       <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4">
-        <h3 className="text-sm font-semibold text-white mb-3">Recent Activity</h3>
+        <h3 className="text-sm font-semibold text-white mb-3">
+          Recent Activity
+        </h3>
         {recentActivity.length === 0 ? (
           <p className="text-zinc-500 text-sm">No recent activity</p>
         ) : (
@@ -141,10 +164,12 @@ export function HeadlessDemo({ ownerAddress, selectedChainId }: HeadlessDemoProp
                 <div className="flex items-center gap-2">
                   <ActivityIcon type={item.type} />
                   <span className="text-zinc-300">
-                    {item.deposit.token} - ${item.deposit.amountUSD.toFixed(2)}
+                    {item.token} - ${item.amountUSD.toFixed(2)}
                   </span>
                 </div>
-                <span className="text-xs text-zinc-500 capitalize">{item.type}</span>
+                <span className="text-xs text-zinc-500 capitalize">
+                  {item.type}
+                </span>
               </div>
             ))}
           </div>
@@ -198,6 +223,8 @@ function ActivityIcon({ type }: { type: string }) {
   };
 
   return (
-    <div className={`w-2 h-2 rounded-full ${colors[type as keyof typeof colors] || "bg-zinc-500"}`} />
+    <div
+      className={`w-2 h-2 rounded-full ${colors[type as keyof typeof colors] || "bg-zinc-500"}`}
+    />
   );
 }

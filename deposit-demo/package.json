@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "rm -rf node_modules/@particle-network/deposit-sdk/node_modules/@types/react"
   },
   "dependencies": {
     "@particle-network/deposit-sdk": "file:../sdk",
