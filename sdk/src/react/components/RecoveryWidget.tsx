@@ -17,7 +17,7 @@ import { CHAIN, CHAIN_META } from "../../constants/chains";
 import { getTokenDecimals } from "../../constants/tokens";
 import { useDepositContext } from "../context/DepositContext";
 
-export type RecoveryMode = "recover" | "refund";
+type RecoveryMode = "recover" | "refund";
 
 export interface RecoveryWidgetProps {
   /**
