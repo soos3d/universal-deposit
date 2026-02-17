@@ -1,5 +1,5 @@
 import type { TokenType } from "../../core/types";
-import { CHAIN } from "../../constants/chains";
+import { CHAIN, CHAIN_META, PRIMARY_ASSETS_BY_CHAIN, DEFAULT_SUPPORTED_CHAINS } from "../../constants/chains";
 
 export const LOGO_URLS: Record<string, string> = {
   // Chains
@@ -46,52 +46,29 @@ export const LOGO_URLS: Record<string, string> = {
   BNB: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/binance/info/logo.png",
 };
 
-interface ChainOption {
+export interface ChainOption {
   id: number;
   name: string;
   color: string;
   addressType: "evm" | "solana";
 }
 
-export const CHAIN_OPTIONS: ChainOption[] = [
-  { id: CHAIN.SOLANA, name: "Solana", color: "#9945ff", addressType: "solana" },
-  { id: CHAIN.ETHEREUM, name: "Ethereum", color: "#627eea", addressType: "evm" },
-  { id: CHAIN.BNB, name: "BNB Chain", color: "#f3ba2f", addressType: "evm" },
-  { id: CHAIN.MANTLE, name: "Mantle", color: "#000000", addressType: "evm" },
-  { id: CHAIN.MONAD, name: "Monad", color: "#6366f1", addressType: "evm" },
-  { id: CHAIN.PLASMA, name: "Plasma", color: "#8b5cf6", addressType: "evm" },
-  { id: CHAIN.XLAYER, name: "X Layer", color: "#000000", addressType: "evm" },
-  { id: CHAIN.BASE, name: "Base", color: "#0052ff", addressType: "evm" },
-  { id: CHAIN.ARBITRUM, name: "Arbitrum", color: "#12aaeb", addressType: "evm" },
-  { id: CHAIN.AVALANCHE, name: "Avalanche", color: "#e84142", addressType: "evm" },
-  { id: CHAIN.OPTIMISM, name: "OP (Optimism)", color: "#ff0420", addressType: "evm" },
-  { id: CHAIN.POLYGON, name: "Polygon", color: "#8247e5", addressType: "evm" },
-  { id: CHAIN.HYPERVM, name: "HyperEVM", color: "#00d4ff", addressType: "evm" },
-  { id: CHAIN.BERACHAIN, name: "Berachain", color: "#f5841f", addressType: "evm" },
-  { id: CHAIN.LINEA, name: "Linea", color: "#121212", addressType: "evm" },
-  { id: CHAIN.SONIC, name: "Sonic", color: "#1969ff", addressType: "evm" },
-  { id: CHAIN.MERLIN, name: "Merlin", color: "#f7931a", addressType: "evm" },
-];
+/** Derived from CHAIN_META — single source of truth in constants/chains.ts */
+export const CHAIN_OPTIONS: ChainOption[] = DEFAULT_SUPPORTED_CHAINS.map(
+  (chainId) => {
+    const meta = CHAIN_META[chainId];
+    return { id: chainId, name: meta.name, color: meta.color, addressType: meta.addressType };
+  },
+);
 
-export const CHAIN_SUPPORTED_TOKENS: Record<number, TokenType[]> = {
-  [CHAIN.SOLANA]: ["USDC", "USDT", "SOL"],
-  [CHAIN.ETHEREUM]: ["USDC", "USDT", "ETH", "BTC"],
-  [CHAIN.BASE]: ["USDC", "ETH", "BTC"],
-  [CHAIN.BNB]: ["USDC", "USDT", "ETH", "BTC", "BNB"],
-  [CHAIN.MANTLE]: ["USDT"],
-  [CHAIN.MONAD]: ["USDC"],
-  [CHAIN.PLASMA]: ["USDT"],
-  [CHAIN.XLAYER]: ["USDC", "USDT"],
-  [CHAIN.HYPERVM]: ["USDT"],
-  [CHAIN.SONIC]: ["USDC"],
-  [CHAIN.BERACHAIN]: ["USDC"],
-  [CHAIN.AVALANCHE]: ["USDC", "USDT", "ETH", "BTC"],
-  [CHAIN.ARBITRUM]: ["USDC", "USDT", "ETH", "BTC"],
-  [CHAIN.OPTIMISM]: ["USDC", "USDT", "ETH", "BTC"],
-  [CHAIN.LINEA]: ["USDC", "USDT", "ETH", "BTC"],
-  [CHAIN.POLYGON]: ["USDC", "USDT", "ETH", "BTC"],
-  [CHAIN.MERLIN]: ["BTC"],
-};
+/** Derived from PRIMARY_ASSETS_BY_CHAIN — single source of truth in constants/chains.ts */
+export const CHAIN_SUPPORTED_TOKENS: Record<number, TokenType[]> =
+  Object.fromEntries(
+    Object.entries(PRIMARY_ASSETS_BY_CHAIN).map(([chainId, tokens]) => [
+      Number(chainId),
+      tokens as TokenType[],
+    ]),
+  );
 
 export const TOKEN_SUPPORTED_CHAINS: Record<TokenType, number[]> =
   Object.entries(CHAIN_SUPPORTED_TOKENS).reduce(

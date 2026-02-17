@@ -129,6 +129,7 @@ export function DepositWidget({
   const [copied, setCopied] = useState(false);
   const [depositAddress, setDepositAddress] = useState<string>("");
   const autoSweep = client?.getConfig().autoSweep ?? true;
+  const minValueUSD = client?.getConfig().minValueUSD;
 
   // Get deposit address based on selected chain
   useEffect(() => {
@@ -801,7 +802,7 @@ export function DepositWidget({
                   result in permanent loss.
                 </p>
                 <p className="mt-1">
-                  Minimum deposit: <strong>{getMinDepositAmount(selectedToken)} {selectedToken}</strong>
+                  Minimum deposit: <strong>{minValueUSD != null ? `$${minValueUSD}` : `${getMinDepositAmount(selectedToken)} ${selectedToken}`}</strong>
                 </p>
               </div>
             </div>

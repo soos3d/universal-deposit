@@ -53,7 +53,7 @@ const client = new DepositClient(config: DepositClientConfig);
 | `supportedTokens` | `TokenType[]` | No | All tokens | Filter which tokens to watch |
 | `supportedChains` | `number[]` | No | All 17 chains | Filter which chains to watch |
 | `autoSweep` | `boolean` | No | `true` | Auto-sweep detected deposits |
-| `minValueUSD` | `number` | No | `0.20` | Minimum USD value to trigger sweep |
+| `minValueUSD` | `number` | No | `0.50` | Minimum USD value to trigger sweep |
 | `pollingIntervalMs` | `number` | No | `3000` | Balance check interval |
 | `recovery` | `RecoveryConfig` | No | — | Recovery behavior options |
 | `refund` | `RefundConfig` | No | `{ enabled: false }` | Auto-refund when sweep fails (experimental) |
@@ -284,7 +284,7 @@ function App() {
 | `supportedTokens` | `TokenType[]` | All | Tokens to support |
 | `supportedChains` | `number[]` | All | Chains to support |
 | `autoSweep` | `boolean` | `true` | Enable auto-sweep |
-| `minValueUSD` | `number` | `0.20` | Minimum USD threshold |
+| `minValueUSD` | `number` | `0.50` | Minimum USD threshold |
 | `pollingIntervalMs` | `number` | `3000` | Polling interval |
 | `refund` | `RefundConfig` | `{ enabled: false }` | Auto-refund configuration (experimental) |
 

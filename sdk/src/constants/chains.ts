@@ -24,25 +24,30 @@ export const CHAIN = {
 
 export type ChainId = (typeof CHAIN)[keyof typeof CHAIN];
 
-export const CHAIN_META: Record<number, { name: string; addressType: 'evm' | 'solana' }> = {
-  [CHAIN.SOLANA]: { name: 'Solana', addressType: 'solana' },
-  [CHAIN.OPTIMISM]: { name: 'Optimism', addressType: 'evm' },
-  [CHAIN.BNB]: { name: 'BNB Chain', addressType: 'evm' },
-  [CHAIN.POLYGON]: { name: 'Polygon', addressType: 'evm' },
-  [CHAIN.BASE]: { name: 'Base', addressType: 'evm' },
-  [CHAIN.ARBITRUM]: { name: 'Arbitrum', addressType: 'evm' },
-  [CHAIN.AVALANCHE]: { name: 'Avalanche', addressType: 'evm' },
-  [CHAIN.ETHEREUM]: { name: 'Ethereum', addressType: 'evm' },
-  [CHAIN.LINEA]: { name: 'Linea', addressType: 'evm' },
-  [CHAIN.HYPERVM]: { name: 'HyperEVM', addressType: 'evm' },
-  [CHAIN.MANTLE]: { name: 'Mantle', addressType: 'evm' },
-  [CHAIN.MERLIN]: { name: 'Merlin', addressType: 'evm' },
-  [CHAIN.XLAYER]: { name: 'X Layer', addressType: 'evm' },
-  [CHAIN.MONAD]: { name: 'Monad', addressType: 'evm' },
-  [CHAIN.SONIC]: { name: 'Sonic', addressType: 'evm' },
-  [CHAIN.PLASMA]: { name: 'Plasma', addressType: 'evm' },
-  [CHAIN.BERACHAIN]: { name: 'Berachain', addressType: 'evm' },
+export interface ChainMeta {
+  name: string;
+  addressType: 'evm' | 'solana';
+  color: string;
+}
 
+export const CHAIN_META: Record<number, ChainMeta> = {
+  [CHAIN.SOLANA]: { name: 'Solana', addressType: 'solana', color: '#9945ff' },
+  [CHAIN.ETHEREUM]: { name: 'Ethereum', addressType: 'evm', color: '#627eea' },
+  [CHAIN.OPTIMISM]: { name: 'OP (Optimism)', addressType: 'evm', color: '#ff0420' },
+  [CHAIN.BNB]: { name: 'BNB Chain', addressType: 'evm', color: '#f3ba2f' },
+  [CHAIN.POLYGON]: { name: 'Polygon', addressType: 'evm', color: '#8247e5' },
+  [CHAIN.BASE]: { name: 'Base', addressType: 'evm', color: '#0052ff' },
+  [CHAIN.ARBITRUM]: { name: 'Arbitrum', addressType: 'evm', color: '#12aaeb' },
+  [CHAIN.AVALANCHE]: { name: 'Avalanche', addressType: 'evm', color: '#e84142' },
+  [CHAIN.LINEA]: { name: 'Linea', addressType: 'evm', color: '#121212' },
+  [CHAIN.HYPERVM]: { name: 'HyperEVM', addressType: 'evm', color: '#00d4ff' },
+  [CHAIN.MANTLE]: { name: 'Mantle', addressType: 'evm', color: '#000000' },
+  [CHAIN.MERLIN]: { name: 'Merlin', addressType: 'evm', color: '#f7931a' },
+  [CHAIN.XLAYER]: { name: 'X Layer', addressType: 'evm', color: '#000000' },
+  [CHAIN.MONAD]: { name: 'Monad', addressType: 'evm', color: '#6366f1' },
+  [CHAIN.SONIC]: { name: 'Sonic', addressType: 'evm', color: '#1969ff' },
+  [CHAIN.PLASMA]: { name: 'Plasma', addressType: 'evm', color: '#8b5cf6' },
+  [CHAIN.BERACHAIN]: { name: 'Berachain', addressType: 'evm', color: '#f5841f' },
 };
 
 export const DEFAULT_SUPPORTED_CHAINS = [

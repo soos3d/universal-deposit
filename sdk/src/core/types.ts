@@ -14,10 +14,6 @@ export type AddressType = 'evm' | 'solana';
 // Configuration
 // ============================================
 
-export interface Signer {
-  signMessage: (message: string | Uint8Array) => Promise<string>;
-}
-
 /**
  * Auth Core provider interface for signing UA transactions
  * This is the intermediary wallet's provider from Particle Auth Core
@@ -89,9 +85,6 @@ export interface DepositClientConfig {
   // This comes from useEthereum().provider in @particle-network/auth-core-modal
   // Required for sweep operations
   authCoreProvider?: AuthCoreProvider;
-
-  // Legacy signer (deprecated - use authCoreProvider instead)
-  signer?: Signer;
 
   /**
    * Configuration for where swept funds are sent.

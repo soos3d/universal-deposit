@@ -4,7 +4,7 @@ export * from './tokens';
 export const DEFAULT_JWT_SERVICE_URL = 'https://deposit-auth-worker.deposit-kit.workers.dev';
 export const DEFAULT_DESTINATION_CHAIN_ID = 42161; // Arbitrum
 // Low threshold to account for stablecoin price fluctuations (e.g., 0.5 USDC = $0.49985)
-export const DEFAULT_MIN_VALUE_USD = 0.2;
+export const DEFAULT_MIN_VALUE_USD = 0.5;
 export const DEFAULT_POLLING_INTERVAL_MS = 3000;
 
 // Default Particle project credentials for the Deposit SDK

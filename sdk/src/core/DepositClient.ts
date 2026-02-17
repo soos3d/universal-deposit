@@ -47,7 +47,6 @@ export interface ResolvedConfig {
   ownerAddress: string;
   intermediaryAddress: string;
   authCoreProvider: DepositClientConfig['authCoreProvider'];
-  signer: DepositClientConfig['signer'];
   destination: {
     address: string;
     chainId: number;
@@ -141,7 +140,6 @@ export class DepositClient extends TypedEventEmitter<DepositEvents> {
       ownerAddress: config.ownerAddress.trim().toLowerCase(),
       intermediaryAddress: config.intermediaryAddress.trim().toLowerCase(),
       authCoreProvider: config.authCoreProvider,
-      signer: config.signer,
       destination: {
         address: config.destination?.address?.trim().toLowerCase() || config.ownerAddress.trim().toLowerCase(),
         chainId: config.destination?.chainId ?? DEFAULT_DESTINATION_CHAIN_ID,

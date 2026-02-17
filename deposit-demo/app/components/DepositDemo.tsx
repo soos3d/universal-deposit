@@ -231,7 +231,7 @@ export function DepositDemo() {
                     prop:
                   </p>
                   <pre className="mt-2 text-[11px] text-zinc-400 bg-zinc-900/80 rounded p-2 overflow-x-auto">
-{`destination={{ chainId: CHAIN.BASE }}
+                    {`destination={{ chainId: CHAIN.BASE }}
 // CHAIN.ARBITRUM, CHAIN.OPTIMISM,
 // CHAIN.ETHEREUM, CHAIN.BNB, ...`}
                   </pre>
