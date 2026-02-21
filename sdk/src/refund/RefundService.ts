@@ -22,6 +22,17 @@ import type {
 import { RefundError } from '../core/errors';
 import { TOKEN_ADDRESSES, CHAIN, getTokenDecimals, getAddressType, getChainName, isValidEvmAddress, isValidSolanaAddress } from '../constants';
 
+/**
+ * Convert a raw BigInt amount string to a human-readable decimal string.
+ * E.g. rawToHuman("1000000", 6) => "1.000000"
+ */
+function rawToHuman(raw: string, decimals: number): string {
+  const padded = raw.padStart(decimals + 1, '0');
+  const whole = padded.slice(0, padded.length - decimals);
+  const fraction = padded.slice(padded.length - decimals);
+  return `${whole}.${fraction}`;
+}
+
 const NOOP_LOGGER: Logger = {
   log: () => {},
   warn: () => {},
@@ -91,10 +102,15 @@ export class RefundService {
         const txSymbol = tx.targetToken?.symbol?.toUpperCase();
         if (txSymbol !== deposit.token) return false;
 
-        // Match by amount (approximate - remove + sign and compare)
-        const txAmount = tx.change?.amount?.replace(/^[+-]/, '') || '0';
-        // Allow some tolerance for formatting differences
-        if (Math.abs(parseFloat(txAmount) - parseFloat(deposit.amount)) > 0.0001) return false;
+        // Match by amount (approximate — tx amount is human-readable, deposit may use raw or human format)
+        const txAmount = parseFloat(tx.change?.amount?.replace(/^[+-]/, '') || '0');
+        // Convert rawAmount (BigInt) to human-readable for comparison
+        const decimals = getTokenDecimals(deposit.token, deposit.chainId);
+        const depositHuman = deposit.rawAmount !== undefined
+          ? parseFloat(rawToHuman(deposit.rawAmount.toString(), decimals))
+          : parseFloat(deposit.amount);
+        // Use 1% tolerance to account for formatting/rounding differences
+        if (depositHuman === 0 || Math.abs(txAmount - depositHuman) / depositHuman > 0.01) return false;
 
         return true;
       });
@@ -210,8 +226,9 @@ export class RefundService {
       const refundAddress = eligibility.refundAddress!;
       const isOriginalSender = eligibility.isOriginalSender || false;
 
+      const truncAddr = refundAddress.length > 12 ? `${refundAddress.slice(0, 6)}...${refundAddress.slice(-4)}` : refundAddress;
       this.logger.log(
-        `[RefundService] Refunding to ${isOriginalSender ? 'original sender' : 'owner'}: ${refundAddress}`
+        `[RefundService] Refunding to ${isOriginalSender ? 'original sender' : 'owner'}: ${truncAddr}`
       );
 
       // Execute refund with retry logic
@@ -277,7 +294,8 @@ export class RefundService {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (ua as any).sendTransaction(tx, signature);
 
-        this.logger.log(`[RefundService] Success! Refunded ${pct}% to ${refundAddress}`);
+        const truncRefund = refundAddress.length > 12 ? `${refundAddress.slice(0, 6)}...${refundAddress.slice(-4)}` : refundAddress;
+        this.logger.log(`[RefundService] Success! Refunded ${pct}% to ${truncRefund}`);
 
         return {
           depositId: deposit.id,

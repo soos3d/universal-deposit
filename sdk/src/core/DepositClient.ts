@@ -3,7 +3,7 @@
  */
 
 import { TypedEventEmitter } from './EventEmitter';
-import { ConfigurationError, RefundError } from './errors';
+import { ConfigurationError, RefundError, SweepError } from './errors';
 import type {
   DepositClientConfig,
   DepositEvents,
@@ -31,6 +31,7 @@ import {
   DEFAULT_JWT_SERVICE_URL,
   DEFAULT_MIN_VALUE_USD,
   DEFAULT_POLLING_INTERVAL_MS,
+  MIN_POLLING_INTERVAL_MS,
   DEFAULT_SUPPORTED_CHAINS,
   DEFAULT_PROJECT_ID,
   DEFAULT_CLIENT_KEY,
@@ -43,6 +44,12 @@ import {
 } from '../constants';
 import { DEFAULT_SUPPORTED_TOKENS, isAboveDustThreshold } from '../constants/tokens';
 import { IntermediaryService } from '../intermediary';
+
+/** Truncate an address for safe logging: 0x1234...5678 */
+function truncateAddress(address: string): string {
+  if (address.length <= 12) return address;
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
 import { UAManager } from '../universal-account';
 import { BalanceWatcher, Sweeper } from '../sweep';
 
@@ -153,7 +160,10 @@ export class DepositClient extends TypedEventEmitter<DepositEvents> {
       supportedChains: config.supportedChains ?? DEFAULT_SUPPORTED_CHAINS,
       autoSweep: config.autoSweep ?? true,
       minValueUSD: config.minValueUSD ?? DEFAULT_MIN_VALUE_USD,
-      pollingIntervalMs: config.pollingIntervalMs ?? DEFAULT_POLLING_INTERVAL_MS,
+      pollingIntervalMs: Math.max(
+        config.pollingIntervalMs ?? DEFAULT_POLLING_INTERVAL_MS,
+        MIN_POLLING_INTERVAL_MS,
+      ),
       jwtServiceUrl: config.jwtServiceUrl ?? DEFAULT_JWT_SERVICE_URL,
       refund: {
         enabled: config.refund?.enabled ?? DEFAULT_REFUND_CONFIG.enabled,
@@ -201,13 +211,13 @@ export class DepositClient extends TypedEventEmitter<DepositEvents> {
     // Log warning if destination address differs from owner
     if (address.toLowerCase() !== ownerAddress.toLowerCase()) {
       this.logger.warn(
-        `[DepositSDK] ⚠️ Destination address (${address}) differs from owner address (${ownerAddress}). ` +
+        `[DepositSDK] Destination address (${truncateAddress(address)}) differs from owner address (${truncateAddress(ownerAddress)}). ` +
         `Funds will be sent to the custom destination address on ${getChainName(chainId)}.`
       );
     }
 
     this.logger.log(
-      `[DepositSDK] Destination configured: ${getChainName(chainId)} (${chainId}) → ${address}`
+      `[DepositSDK] Destination configured: ${getChainName(chainId)} (${chainId}) -> ${truncateAddress(address)}`
     );
   }
 
@@ -237,6 +247,7 @@ export class DepositClient extends TypedEventEmitter<DepositEvents> {
         ownerAddress: this.config.ownerAddress,
         session: this.intermediarySession,
         projectId: this.config.uaProjectId,
+        logger: this.config.logger,
       });
       await this.uaManager.initialize();
 
@@ -320,7 +331,8 @@ export class DepositClient extends TypedEventEmitter<DepositEvents> {
   }
 
   /**
-   * Get the current intermediary session (for debugging/advanced use)
+   * @internal — exposed for SDK internals only; not part of the public API.
+   * Returns a synthetic session (JWT is empty since Auth Core manages auth).
    */
   getIntermediarySession(): IntermediarySession | null {
     return this.intermediarySession;
@@ -343,7 +355,9 @@ export class DepositClient extends TypedEventEmitter<DepositEvents> {
   }
 
   /**
-   * Get the UAManager instance (for advanced use)
+   * @internal — exposed for advanced/debugging use only.
+   * The returned UAManager grants full access to the Universal Account;
+   * prefer using DepositClient methods instead.
    */
   getUAManager(): UAManager | null {
     return this.uaManager;
@@ -708,7 +722,7 @@ export class DepositClient extends TypedEventEmitter<DepositEvents> {
       },
     };
 
-    this.logger.log(`[DepositSDK] Destination updated: ${getChainName(newChainId)} → ${newAddress}`);
+    this.logger.log(`[DepositSDK] Destination updated: ${getChainName(newChainId)} -> ${truncateAddress(newAddress)}`);
   }
 
   /**
@@ -845,6 +859,15 @@ export class DepositClient extends TypedEventEmitter<DepositEvents> {
           if (this.destroyed) return;
           this.activeSweeps.delete(retryKey);
           this.logger.error(`[DepositSDK] Auto-sweep failed (attempt ${attempts + 1}/${DepositClient.MAX_SWEEP_RETRIES}):`, error);
+
+          // SEND_FAILED means the tx may have been submitted — never retry (double-spend risk)
+          if (error instanceof SweepError && (error.code === 'SEND_FAILED' || error.code === 'SIGNING_FAILED')) {
+            this.emit('deposit:error', error, currentDeposit);
+            this.sweepRetries.delete(retryKey);
+            this.originalDepositIds.delete(retryKey);
+            this.resumeDetectionIfIdle();
+            return;
+          }
 
           if (attempts + 1 < DepositClient.MAX_SWEEP_RETRIES) {
             // Retries left — keep item in "processing" state and retry directly

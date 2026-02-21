@@ -5,6 +5,8 @@ export const DEFAULT_JWT_SERVICE_URL = 'https://deposit-auth-worker.deposit-kit.
 // Low threshold to account for stablecoin price fluctuations (e.g., 0.5 USDC = $0.49985)
 export const DEFAULT_MIN_VALUE_USD = 0.5;
 export const DEFAULT_POLLING_INTERVAL_MS = 3000;
+/** Minimum allowed polling interval to prevent API rate-limiting */
+export const MIN_POLLING_INTERVAL_MS = 2000;
 
 // Default Particle project credentials for the Deposit SDK
 // These are used when devs don't provide their own credentials

@@ -142,7 +142,8 @@ export class Sweeper {
     const ua = this.config.uaManager.getUniversalAccount() as any;
     const { chainId: targetChainId, address: receiver } = this.config.getDestination();
 
-    this.logger.log(`[Sweeper] Destination: ${getChainName(targetChainId)} (${targetChainId}) -> ${receiver}`);
+    const truncAddr = receiver.length > 12 ? `${receiver.slice(0, 6)}...${receiver.slice(-4)}` : receiver;
+    this.logger.log(`[Sweeper] Destination: ${getChainName(targetChainId)} (${targetChainId}) -> ${truncAddr}`);
     this.logger.log(`[Sweeper] Deposit: ${deposit.token} on chain ${deposit.chainId}, $${deposit.amountUSD?.toFixed(2) ?? '?'}`);
 
     const targets = this.buildSweepTargets(deposit, targetChainId);

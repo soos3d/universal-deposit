@@ -9,18 +9,25 @@
 
 import { UniversalAccount } from '@particle-network/universal-account-sdk';
 import { UniversalAccountError } from '../core/errors';
-import type { DepositAddresses, IntermediarySession, UATransaction } from '../core/types';
+import type { DepositAddresses, IntermediarySession, UATransaction, Logger } from '../core/types';
 import {
   DEFAULT_PROJECT_ID,
   DEFAULT_CLIENT_KEY,
   DEFAULT_APP_ID,
 } from '../constants';
 
+const NOOP_LOGGER: Logger = {
+  log: () => {},
+  warn: () => {},
+  error: () => {},
+};
+
 export interface UAManagerConfig {
   ownerAddress: string;
   session: IntermediarySession;
   /** Optional project ID override for UA operations. Defaults to SDK built-in. */
   projectId?: string;
+  logger?: Logger;
 }
 
 export interface SmartAccountOptions {
@@ -51,10 +58,12 @@ export class UAManager {
   private ua: UniversalAccount | null = null;
   private depositAddresses: DepositAddresses | null = null;
   private config: UAManagerConfig;
+  private readonly logger: Logger;
   private initialized = false;
 
   constructor(config: UAManagerConfig) {
     this.config = config;
+    this.logger = config.logger ?? NOOP_LOGGER;
   }
 
   /**
@@ -176,7 +185,7 @@ export class UAManager {
         return response.transactions;
       }
 
-      console.warn('[UAManager] Unexpected getTransactions response format:', response);
+      this.logger.warn('[UAManager] Unexpected getTransactions response format:', response);
       return [];
     } catch (error) {
       throw new UniversalAccountError(
