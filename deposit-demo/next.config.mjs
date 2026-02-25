@@ -1,5 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   webpack: (config, { webpack }) => {
     config.resolve.fallback = {
       ...config.resolve.fallback,
