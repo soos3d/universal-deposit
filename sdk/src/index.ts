@@ -34,6 +34,11 @@ export type {
   RefundResult,
   RefundReason,
   DepositOrigin,
+  // Transaction history types
+  UATransaction,
+  TokenTransactionFilter,
+  TokenTransactionsResponse,
+  TransactionsResponse,
 } from './core/types';
 
 // Errors

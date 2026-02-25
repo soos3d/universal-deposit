@@ -1,10 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import {
   useDeposit,
   CHAIN,
   getChainName,
 } from "@particle-network/deposit-sdk/react";
+import { TransactionHistoryDialog } from "./TransactionHistoryDialog";
 
 interface HeadlessDemoProps {
   ownerAddress: string;
@@ -25,7 +27,10 @@ export function HeadlessDemo({
     sweep,
     setDestination,
     currentDestination,
+    client,
   } = useDeposit({ ownerAddress });
+
+  const [isTxHistoryOpen, setIsTxHistoryOpen] = useState(false);
 
   const handleSweepAll = async () => {
     try {
@@ -175,6 +180,31 @@ export function HeadlessDemo({
           </div>
         )}
       </div>
+
+      {/* Transaction History */}
+      <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-white">
+            Transaction History
+          </h3>
+          <button
+            onClick={() => setIsTxHistoryOpen(true)}
+            disabled={!client}
+            className="text-xs px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            View History
+          </button>
+        </div>
+        <p className="text-zinc-500 text-sm mt-2">
+          Browse all Universal Account transactions with pagination.
+        </p>
+      </div>
+
+      <TransactionHistoryDialog
+        client={client}
+        isOpen={isTxHistoryOpen}
+        onClose={() => setIsTxHistoryOpen(false)}
+      />
 
       {/* Update Destination Button */}
       {currentDestination?.chainId !== selectedChainId && (
