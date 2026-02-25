@@ -19,6 +19,10 @@ import type {
   RefundReason,
   TokenType,
   Logger,
+  TokenTransactionFilter,
+  TokenTransactionsResponse,
+  TransactionsResponse,
+  UATransaction,
 } from './types';
 
 const NOOP_LOGGER: Logger = {
@@ -361,6 +365,86 @@ export class DepositClient extends TypedEventEmitter<DepositEvents> {
    */
   getUAManager(): UAManager | null {
     return this.uaManager;
+  }
+
+  // ============================================
+  // Transaction History
+  // ============================================
+
+  /**
+   * Get paginated transaction history for the Universal Account.
+   *
+   * @param page - Page number (1-indexed). Default: 1
+   * @param pageSize - Transactions per page. Default: 10
+   * @returns Paginated response with transactions
+   *
+   * @example
+   * const { transactions, page, pageSize } = await client.getTransactions(1, 10);
+   */
+  async getTransactions(page?: number, pageSize?: number): Promise<TransactionsResponse> {
+    if (!this.uaManager) {
+      throw new ConfigurationError('Client not initialized. Call initialize() first.');
+    }
+    try {
+      return await this.uaManager.getTransactions(page, pageSize);
+    } catch (error) {
+      if (error instanceof ConfigurationError) throw error;
+      throw new ConfigurationError(
+        `Failed to get transactions: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+
+  /**
+   * Get transactions filtered by token and chain (cursor-based pagination).
+   *
+   * @param filter - Token address and chain ID to filter by
+   * @param pageToken - Cursor from a previous response for next page
+   * @returns Cursor-paginated response with transactions
+   *
+   * @example
+   * const { transactions, nextPageToken } = await client.getTokenTransactions(
+   *   { chainId: CHAIN.ETHEREUM, address: '0xA0b8...' }
+   * );
+   */
+  async getTokenTransactions(
+    filter: TokenTransactionFilter,
+    pageToken?: string,
+  ): Promise<TokenTransactionsResponse> {
+    if (!this.uaManager) {
+      throw new ConfigurationError('Client not initialized. Call initialize() first.');
+    }
+    try {
+      return await this.uaManager.getTokenTransactions(filter, pageToken);
+    } catch (error) {
+      if (error instanceof ConfigurationError) throw error;
+      throw new ConfigurationError(
+        `Failed to get token transactions: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+
+  /**
+   * Get a single transaction by its ID.
+   *
+   * @param transactionId - The transaction ID to look up
+   * @returns The transaction record
+   *
+   * @example
+   * const tx = await client.getTransaction('tx_abc123');
+   */
+  async getTransaction(transactionId: string): Promise<UATransaction> {
+    if (!this.uaManager) {
+      throw new ConfigurationError('Client not initialized. Call initialize() first.');
+    }
+    try {
+      return await this.uaManager.getTransaction(transactionId);
+    } catch (error) {
+      if (error instanceof ConfigurationError) throw error;
+      throw new ConfigurationError(
+        `Failed to get transaction: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
   }
 
   // ============================================

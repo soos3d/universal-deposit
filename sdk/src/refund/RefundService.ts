@@ -86,10 +86,10 @@ export class RefundService {
    */
   async findDepositOrigin(deposit: DetectedDeposit): Promise<DepositOrigin | null> {
     try {
-      const transactions = await this.config.uaManager.getTransactions(1, 50);
+      const response = await this.config.uaManager.getTransactions(1, 50);
 
       // Find matching incoming transaction
-      const match = transactions.find((tx: UATransaction) => {
+      const match = response.transactions.find((tx: UATransaction) => {
         // Must be an incoming transaction
         const isIncoming = tx.tag === 'receive' || tx.change?.amount?.startsWith('+');
         if (!isIncoming) return false;

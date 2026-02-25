@@ -1,5 +1,5 @@
 {
-  "name": "@particle-network/deposit-sdk",
+  "name": "@particle-network/universal-deposit",
   "version": "0.1.0",
   "description": "Deposit SDK for Universal Accounts - solve the empty smart account problem",
   "main": "dist/index.js",
@@ -62,7 +62,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/particle-network/deposit-sdk"
+    "url": "https://github.com/particle-network/universal-deposit"
   },
   "dependencies": {
     "@particle-network/auth-core": "^2.1.1",

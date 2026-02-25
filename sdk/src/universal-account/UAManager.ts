@@ -9,7 +9,16 @@
 
 import { UniversalAccount } from '@particle-network/universal-account-sdk';
 import { UniversalAccountError } from '../core/errors';
-import type { DepositAddresses, IntermediarySession, UATransaction, Logger } from '../core/types';
+import type {
+  DepositAddresses,
+  IntermediarySession,
+  UATransaction,
+  TokenTransactionFilter,
+  TokenTransactionsResponse,
+  TransactionsResponse,
+  Logger,
+} from '../core/types';
+import { TransactionCache } from './TransactionCache';
 import {
   DEFAULT_PROJECT_ID,
   DEFAULT_CLIENT_KEY,
@@ -60,6 +69,9 @@ export class UAManager {
   private config: UAManagerConfig;
   private readonly logger: Logger;
   private initialized = false;
+  private readonly txCache = new TransactionCache<TransactionsResponse>();
+  private readonly tokenTxCache = new TransactionCache<TokenTransactionsResponse>();
+  private readonly singleTxCache = new TransactionCache<UATransaction>();
 
   constructor(config: UAManagerConfig) {
     this.config = config;
@@ -158,41 +170,127 @@ export class UAManager {
    * Get transaction history from the Universal Account
    * @param page - Page number (1-indexed)
    * @param pageSize - Number of transactions per page
-   * @returns Array of transactions ordered by most recent
+   * @returns Paginated response with transactions
    */
-  async getTransactions(page: number = 1, pageSize: number = 10): Promise<UATransaction[]> {
+  async getTransactions(page: number = 1, pageSize: number = 10): Promise<TransactionsResponse> {
     if (!this.ua) {
       throw new UniversalAccountError('UAManager not initialized. Call initialize() first.');
     }
 
+    const cacheKey = `page:${page}:${pageSize}`;
+    const cached = this.txCache.get(cacheKey);
+    if (cached) return cached;
+
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const response = await (this.ua as any).getTransactions(page, pageSize);
-
-      // Handle different response formats from the UA SDK
-      // Response could be: array, { result: { data: [] } }, { data: [] }, etc.
-      if (Array.isArray(response)) {
-        return response;
-      }
-      // JSON-RPC wrapped response: { result: { data: [...] } }
-      if (response?.result?.data && Array.isArray(response.result.data)) {
-        return response.result.data;
-      }
-      if (response?.data && Array.isArray(response.data)) {
-        return response.data;
-      }
-      if (response?.transactions && Array.isArray(response.transactions)) {
-        return response.transactions;
-      }
-
-      this.logger.warn('[UAManager] Unexpected getTransactions response format:', response);
-      return [];
+      const transactions = await this.fetchTransactionsRaw(page, pageSize);
+      const result: TransactionsResponse = { transactions, page, pageSize };
+      this.txCache.set(cacheKey, result);
+      return result;
     } catch (error) {
       throw new UniversalAccountError(
         `Failed to get transactions: ${error instanceof Error ? error.message : 'Unknown error'}`,
         error
       );
     }
+  }
+
+  /**
+   * Get transactions filtered by token and chain (cursor-based pagination)
+   * @param filter - Token contract address and chain ID
+   * @param pageToken - Cursor for next page (from previous response)
+   * @returns Cursor-paginated response with transactions
+   */
+  async getTokenTransactions(
+    filter: TokenTransactionFilter,
+    pageToken?: string,
+  ): Promise<TokenTransactionsResponse> {
+    if (!this.ua) {
+      throw new UniversalAccountError('UAManager not initialized. Call initialize() first.');
+    }
+
+    const cacheKey = `token:${filter.address}:${filter.chainId}:${pageToken ?? 'first'}`;
+    const cached = this.tokenTxCache.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const response = await (this.ua as any).getTokenTransactions(filter, pageToken);
+
+      const transactions = this.normalizeTransactionList(response);
+      const nextPageToken: string | undefined =
+        response?.nextPageToken ?? response?.result?.nextPageToken ?? undefined;
+
+      const result: TokenTransactionsResponse = { transactions, nextPageToken };
+      this.tokenTxCache.set(cacheKey, result);
+      return result;
+    } catch (error) {
+      throw new UniversalAccountError(
+        `Failed to get token transactions: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error
+      );
+    }
+  }
+
+  /**
+   * Get a single transaction by ID
+   * @param transactionId - The transaction ID to look up
+   * @returns The transaction record
+   */
+  async getTransaction(transactionId: string): Promise<UATransaction> {
+    if (!this.ua) {
+      throw new UniversalAccountError('UAManager not initialized. Call initialize() first.');
+    }
+
+    const cached = this.singleTxCache.get(transactionId);
+    if (cached) return cached;
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const response = await (this.ua as any).getTransaction(transactionId);
+
+      // Unwrap possible envelope formats
+      const tx: UATransaction =
+        response?.result?.data ?? response?.data ?? response;
+
+      this.singleTxCache.set(transactionId, tx);
+      return tx;
+    } catch (error) {
+      throw new UniversalAccountError(
+        `Failed to get transaction ${transactionId}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error
+      );
+    }
+  }
+
+  /** Invalidate all transaction caches (e.g. after a new sweep). */
+  invalidateTransactionCache(): void {
+    this.txCache.invalidate();
+    this.tokenTxCache.invalidate();
+    this.singleTxCache.invalidate();
+  }
+
+  /**
+   * Raw fetch + normalization for page-based getTransactions
+   */
+  private async fetchTransactionsRaw(page: number, pageSize: number): Promise<UATransaction[]> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const response = await (this.ua as any).getTransactions(page, pageSize);
+    return this.normalizeTransactionList(response);
+  }
+
+  /**
+   * Normalize various response shapes into a flat UATransaction[]
+   */
+  private normalizeTransactionList(response: unknown): UATransaction[] {
+    if (Array.isArray(response)) return response;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const r = response as any;
+    if (r?.result?.data && Array.isArray(r.result.data)) return r.result.data;
+    if (r?.data && Array.isArray(r.data)) return r.data;
+    if (r?.transactions && Array.isArray(r.transactions)) return r.transactions;
+
+    this.logger.warn('[UAManager] Unexpected transaction response format:', response);
+    return [];
   }
 
   /**
@@ -240,5 +338,6 @@ export class UAManager {
     this.ua = null;
     this.depositAddresses = null;
     this.initialized = false;
+    this.invalidateTransactionCache();
   }
 }

@@ -70,7 +70,7 @@ describe('RefundService', () => {
         }),
         sendTransaction: vi.fn().mockResolvedValue({}),
       }),
-      getTransactions: vi.fn().mockResolvedValue([]),
+      getTransactions: vi.fn().mockResolvedValue({ transactions: [], page: 1, pageSize: 50 }),
       isInitialized: vi.fn().mockReturnValue(true),
     };
 
@@ -87,7 +87,7 @@ describe('RefundService', () => {
       const deposit = createMockDeposit();
       const matchingTx = createMockTransaction();
 
-      mockUAManager.getTransactions.mockResolvedValue([matchingTx]);
+      mockUAManager.getTransactions.mockResolvedValue({ transactions: [matchingTx], page: 1, pageSize: 50 });
 
       const origin = await refundService.findDepositOrigin(deposit);
 
@@ -101,7 +101,7 @@ describe('RefundService', () => {
       const deposit = createMockDeposit({ chainId: CHAIN.ARBITRUM });
       const nonMatchingTx = createMockTransaction(); // Different chain
 
-      mockUAManager.getTransactions.mockResolvedValue([nonMatchingTx]);
+      mockUAManager.getTransactions.mockResolvedValue({ transactions: [nonMatchingTx], page: 1, pageSize: 50 });
 
       const origin = await refundService.findDepositOrigin(deposit);
 
@@ -113,7 +113,7 @@ describe('RefundService', () => {
       const txWithoutSender = createMockTransaction();
       txWithoutSender.change.from = '';
 
-      mockUAManager.getTransactions.mockResolvedValue([txWithoutSender]);
+      mockUAManager.getTransactions.mockResolvedValue({ transactions: [txWithoutSender], page: 1, pageSize: 50 });
 
       const origin = await refundService.findDepositOrigin(deposit);
 
@@ -126,7 +126,7 @@ describe('RefundService', () => {
       // Transaction is ETH on Ethereum (different token AND chain)
       const ethTx = createMockTransaction(); // ETH token on Ethereum
 
-      mockUAManager.getTransactions.mockResolvedValue([ethTx]);
+      mockUAManager.getTransactions.mockResolvedValue({ transactions: [ethTx], page: 1, pageSize: 50 });
 
       const origin = await refundService.findDepositOrigin(deposit);
 
@@ -150,7 +150,7 @@ describe('RefundService', () => {
       const deposit = createMockDeposit();
       const matchingTx = createMockTransaction();
 
-      mockUAManager.getTransactions.mockResolvedValue([matchingTx]);
+      mockUAManager.getTransactions.mockResolvedValue({ transactions: [matchingTx], page: 1, pageSize: 50 });
 
       const eligibility = await refundService.checkRefundEligibility(deposit);
 
@@ -175,7 +175,7 @@ describe('RefundService', () => {
       // Solana addresses are base58, not 0x prefixed
       txWithSolanaSender.change.from = '7qSo38so1uwrPqTGpcXe94Z9LpBtZghQncLvVfreYCyX';
 
-      mockUAManager.getTransactions.mockResolvedValue([txWithSolanaSender]);
+      mockUAManager.getTransactions.mockResolvedValue({ transactions: [txWithSolanaSender], page: 1, pageSize: 50 });
 
       const eligibility = await refundService.checkRefundEligibility(deposit);
 
@@ -268,7 +268,7 @@ describe('RefundService', () => {
     it('should include refundedTo address in result', async () => {
       const deposit = createMockDeposit();
       const matchingTx = createMockTransaction();
-      mockUAManager.getTransactions.mockResolvedValue([matchingTx]);
+      mockUAManager.getTransactions.mockResolvedValue({ transactions: [matchingTx], page: 1, pageSize: 50 });
 
       const result = await refundService.refund(deposit, 'sweep_failed');
 

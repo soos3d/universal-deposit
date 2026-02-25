@@ -439,3 +439,25 @@ export interface UATransaction {
     };
   }>;
 }
+
+/** Filter for token-specific transaction queries */
+export interface TokenTransactionFilter {
+  /** Chain ID to filter transactions by */
+  chainId: number;
+  /** Token contract address (use '0x' or native token address) */
+  address: string;
+}
+
+/** Paginated response for general transactions (page-based) */
+export interface TransactionsResponse {
+  transactions: UATransaction[];
+  page: number;
+  pageSize: number;
+}
+
+/** Paginated response for token transactions (cursor-based) */
+export interface TokenTransactionsResponse {
+  transactions: UATransaction[];
+  /** Cursor for next page. Undefined when no more pages. */
+  nextPageToken?: string;
+}
