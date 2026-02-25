@@ -2,6 +2,8 @@
 
 Next.js 15 demo app for the [Universal Deposit SDK](../sdk/README.md) with Privy authentication.
 
+> Dev deployed version.
+
 ## Quick Start
 
 ```bash
