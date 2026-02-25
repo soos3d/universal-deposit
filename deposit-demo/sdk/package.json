@@ -1,5 +1,5 @@
 {
-  "name": "@particle-network/universal-deposit",
+  "name": "@particle-network/deposit-sdk",
   "version": "0.1.0",
   "description": "Deposit SDK for Universal Accounts - solve the empty smart account problem",
   "main": "dist/index.js",
